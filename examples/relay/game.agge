@@ -1,0 +1,32 @@
+agge/1 {"title":"Relay Courier","start":"road","size":[320,192],"hz":60,"seed":14}
+room clear {"bg":[17,44,54,255],"instances":[["menu","prompt",0.0,0.0]],"ui":[{"at":[47.0,61.0],"text":"RELAY COMPLETE","color":[149,234,210,255],"size":24},{"at":[48.0,108.0],"text":"ENTER TO RUN AGAIN","color":[252,206,113,255],"size":14}]}
+room road {"bg":[17,25,42,255],"size":[960,192],"camera":{"follow":"runner","dead":[64.0,0.0],"smooth":12.0},"instances":[["runner","courier",34.0,84.0],["relay_a","relay",220.0,84.0],["relay_b","relay",470.0,84.0],["relay_c","relay",720.0,84.0],["exit_gate","gate",904.0,70.0]],"maps":["road"],"lights":[{"at":[231.0,90.0],"radius":96.0,"color":[39,95,113,235]},{"at":[481.0,90.0],"radius":96.0,"color":[39,95,113,235]},{"at":[731.0,90.0],"radius":96.0,"color":[39,95,113,235]},{"at":[920.0,90.0],"radius":96.0,"color":[39,95,113,235]}],"ui":[{"at":[14.0,12.0],"text":"RELAY COURIER","color":[149,234,210,255]},{"at":[225.0,14.0],"text":"RELAYS ","color":[252,206,113,255],"size":12,"value":"relays"},{"at":[14.0,166.0],"text":"ARROWS / WASD   COLLECT 3   REACH THE GATE","color":[172,194,218,255],"size":10}],"darkness":0.25}
+object courier {"size":[14.0,12.0],"color":[149,234,210,255],"script":"drive"}
+object gate {"size":[22.0,42.0],"color":[70,176,223,255]}
+object prompt {"size":[16.0,16.0],"color":[255,255,255,255],"script":"restart","hidden":true}
+object relay {"size":[14.0,14.0],"color":[252,206,113,255],"shape":"circle","script":"collect"}
+tilemap road {"cell":16,"tiles":{"#":[[45,73,99,255],true],"+":[[42,83,117,255]],"=":[[27,42,59,255]]},"rows":["############################################################","#.+.....+.....+.....+.....+.....+.....+.....+.....+.....+..#","#..........................................................#","#.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=..#","#...................##...............##....................#","#...........+.......##.....+.........##...+............+...#","#...................##...............##....................#","#..........................................................#","#.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=.=..#","#..........................................................#","#.+.....+.....+.....+.....+.....+.....+.....+.....+.....+..#","############################################################"]}
+script collect
+step:
+  if touch("courier")
+    global relays = global(relays) + 1
+    emit signal
+    destroy
+  end
+---
+script drive
+create:
+  global relays = 0
+step:
+  move (down("right") - down("left")) * 120 * dt, (down("down") - down("up")) * 120 * dt
+  if global(relays) == 3 && touch("gate")
+    goto clear
+  end
+---
+script restart
+step:
+  if pressed("confirm")
+    goto road
+  end
+---
+particle signal {"count":20,"life":30,"speed":70.0,"radius":1.5,"color":[252,206,113,255]}

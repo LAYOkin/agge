@@ -1,0 +1,175 @@
+{
+  "scope": "scripted edit transcript",
+  "encoding": "o200k_base",
+  "godot": "4.5.1.stable.official.f62fdbde1",
+  "trials": [
+    {
+      "task": "grid",
+      "engine": "agge",
+      "tokens": 102,
+      "message_tokens": [
+        29,
+        7,
+        39,
+        27
+      ],
+      "messages": [
+        "Place a 12×8 grid of cells in arena at (24,32), spaced (32,24). Name them cell_x_y.",
+        "agge edit game.agge -",
+        "{\"ops\":[{\"op\":\"grid\",\"room\":\"arena\",\"object\":\"cell\",\"prefix\":\"cell\",\"at\":[24,32],\"step\":[32,24],\"size\":[12,8]}]}",
+        "{\"changed\":[\"room/arena\"],\"revision\":\"bJwwTVK9VznWQzPmEWKG9A\"}"
+      ],
+      "completed": true,
+      "correct": true,
+      "check": "{\"passed\":true,\"report\":{\"assertions\":289,\"ticks\":0},\"revision\":\"bJwwTVK9VznWQzPmEWKG9A\"}"
+    },
+    {
+      "task": "grid",
+      "engine": "godot",
+      "tokens": 207,
+      "message_tokens": [
+        29,
+        4,
+        162,
+        12,
+        0
+      ],
+      "messages": [
+        "Place a 12×8 grid of cells in arena at (24,32), spaced (32,24). Name them cell_x_y.",
+        "write edit.gd",
+        "extends SceneTree\n\nfunc _initialize() -> void:\n    var arena = load(\"res://arena.tscn\").instantiate()\n    var cell = load(\"res://cell.tscn\")\n    for y in range(8):\n        for x in range(12):\n            var item = cell.instantiate()\n            item.name = \"cell_%d_%d\" % [x, y]\n            item.position = Vector2(24 + x * 32, 32 + y * 24)\n            arena.add_child(item)\n            item.owner = arena\n    var packed = PackedScene.new()\n    var err = packed.pack(arena)\n    if err == OK:\n        err = ResourceSaver.save(packed, \"res://arena.tscn\")\n    arena.free()\n    quit(err)\n",
+        "godot --headless --quiet --script edit.gd",
+        ""
+      ],
+      "completed": true,
+      "correct": true,
+      "check": ""
+    },
+    {
+      "task": "rename",
+      "engine": "agge",
+      "tokens": 82,
+      "message_tokens": [
+        15,
+        7,
+        21,
+        39
+      ],
+      "messages": [
+        "Rename arena to vault. Preserve startup and the return transition from return_room.",
+        "agge edit game.agge -",
+        "{\"ops\":[{\"op\":\"rename\",\"kind\":\"room\",\"id\":\"arena\",\"to\":\"vault\"}]}",
+        "{\"changed\":[\"project\",\"room/vault\",\"script/return\"],\"removed\":[\"room/arena\"],\"revision\":\"rJ7SqsRB2Rw19sTcDqGEBA\"}"
+      ],
+      "completed": true,
+      "correct": true,
+      "check": "{\"passed\":true,\"report\":{\"assertions\":1,\"ticks\":0},\"revision\":\"rJ7SqsRB2Rw19sTcDqGEBA\"}\n{\"passed\":true,\"report\":{\"assertions\":1,\"ticks\":1},\"revision\":\"rJ7SqsRB2Rw19sTcDqGEBA\"}"
+    },
+    {
+      "task": "rename",
+      "engine": "godot",
+      "tokens": 89,
+      "message_tokens": [
+        15,
+        3,
+        68,
+        3,
+        0
+      ],
+      "messages": [
+        "Rename arena to vault. Preserve startup and the return transition from return_room.",
+        "write edit.py",
+        "from pathlib import Path\n\nold, new = \"arena.tscn\", \"vault.tscn\"\nPath(old).rename(new)\nfor name in (\"project.godot\", \"return.gd\"):\n    path = Path(name)\n    path.write_text(path.read_text().replace(\"res://\" + old, \"res://\" + new))\n",
+        "python edit.py",
+        ""
+      ],
+      "completed": true,
+      "correct": true,
+      "check": ""
+    },
+    {
+      "task": "sprint",
+      "engine": "agge",
+      "tokens": 86,
+      "message_tokens": [
+        18,
+        7,
+        34,
+        27
+      ],
+      "messages": [
+        "Update drive so holding fire doubles horizontal movement. Keep vertical speed and the starting shield unchanged.",
+        "agge edit game.agge -",
+        "{\"ops\":[{\"op\":\"splice\",\"id\":\"drive\",\"at\":[6,1],\"text\":\"  move dx*(1+down(\\\"fire\\\")),dy\"}]}",
+        "{\"changed\":[\"script/drive\"],\"revision\":\"JCafOsjpAbBT0h4qQW5WZQ\"}"
+      ],
+      "completed": true,
+      "correct": true,
+      "check": "{\"passed\":true,\"report\":{\"assertions\":7,\"ticks\":30},\"revision\":\"JCafOsjpAbBT0h4qQW5WZQ\"}"
+    },
+    {
+      "task": "sprint",
+      "engine": "godot",
+      "tokens": 98,
+      "message_tokens": [
+        18,
+        3,
+        74,
+        3,
+        0
+      ],
+      "messages": [
+        "Update drive so holding fire doubles horizontal movement. Keep vertical speed and the starting shield unchanged.",
+        "write edit.py",
+        "from pathlib import Path\n\npath = Path(\"drive.gd\")\nsource = path.read_text()\nbefore = \"position += Vector2(dx, dy)\"\nafter = 'position += Vector2(dx * (2 if Input.is_action_pressed(\"ui_accept\") else 1), dy)'\nassert source.count(before) == 1\npath.write_text(source.replace(before, after))\n",
+        "python edit.py",
+        ""
+      ],
+      "completed": true,
+      "correct": true,
+      "check": ""
+    },
+    {
+      "task": "atlas",
+      "engine": "agge",
+      "tokens": 137,
+      "message_tokens": [
+        35,
+        7,
+        66,
+        29
+      ],
+      "messages": [
+        "Slice the 64x32 terrain PNG into 16x16 tiles. Paint all eight frames in row-major order in one row and give only the last four solid collision.",
+        "agge edit game.agge -",
+        "{\"ops\":[{\"op\":\"slice\",\"id\":\"terrain\",\"cell\":[16,16],\"grid\":[4,2]},{\"op\":\"atlas\",\"map\":\"layout\",\"sprite\":\"terrain\",\"keys\":\"abcdefgh\",\"solid\":\"efgh\"},{\"op\":\"stamp\",\"map\":\"layout\",\"at\":[0,0],\"rows\":[\"abcdefgh\"]}]}",
+        "{\"changed\":[\"sprite/terrain\",\"tilemap/layout\"],\"revision\":\"X2VI88se9eJagMeXesGX6w\"}"
+      ],
+      "completed": true,
+      "correct": true,
+      "check": "{\"passed\":true,\"report\":{\"assertions\":1,\"ticks\":1},\"revision\":\"X2VI88se9eJagMeXesGX6w\"}"
+    },
+    {
+      "task": "atlas",
+      "engine": "godot",
+      "tokens": 338,
+      "message_tokens": [
+        35,
+        4,
+        287,
+        12,
+        0
+      ],
+      "messages": [
+        "Slice the 64x32 terrain PNG into 16x16 tiles. Paint all eight frames in row-major order in one row and give only the last four solid collision.",
+        "write edit.gd",
+        "extends SceneTree\n\nfunc _initialize() -> void:\n    var arena = load(\"res://arena.tscn\").instantiate()\n    var layer = TileMapLayer.new()\n    layer.name = \"Terrain\"\n    var tiles = TileSet.new()\n    var atlas = TileSetAtlasSource.new()\n    atlas.texture = ImageTexture.create_from_image(Image.load_from_file(\"res://terrain.png\"))\n    tiles.add_physics_layer()\n    var source = tiles.add_source(atlas)\n    layer.tile_set = tiles\n    for i in range(8):\n        var cell = Vector2i(i % 4, i >> 2)\n        atlas.create_tile(cell)\n        if i >= 4:\n            var data = atlas.get_tile_data(cell, 0)\n            data.add_collision_polygon(0)\n            data.set_collision_polygon_points(0, 0, PackedVector2Array([\n                Vector2(-8,-8), Vector2(8,-8), Vector2(8,8), Vector2(-8,8)\n            ]))\n        layer.set_cell(Vector2i(i, 0), source, cell)\n    arena.add_child(layer)\n    layer.owner = arena\n    var packed = PackedScene.new()\n    var error = packed.pack(arena)\n    if error == OK:\n        error = ResourceSaver.save(packed, \"res://arena.tscn\")\n    arena.free()\n    quit(error)\n",
+        "godot --headless --quiet --script edit.gd",
+        ""
+      ],
+      "completed": true,
+      "correct": true,
+      "check": ""
+    }
+  ]
+}

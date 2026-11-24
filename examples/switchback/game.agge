@@ -1,0 +1,39 @@
+agge/1 {"title":"Switchback","start":"shaft","size":[320,192],"hz":60,"seed":8}
+room clear {"bg":[35,31,61,255],"instances":[["retry","prompt",0.0,0.0]],"ui":[{"at":[43.0,69.0],"text":"LIFT RESTORED","color":[132,234,198,255],"size":26},{"at":[45.0,115.0],"text":"ENTER TO RUN AGAIN","color":[253,205,116,255],"size":14}]}
+room shaft {"bg":[20,26,47,255],"size":[640,320],"camera":{"follow":"climber","dead":[80.0,64.0],"smooth":16.0},"instances":[["climber","courier",34.0,274.0],["low","platform",108.0,248.0],["mid","platform",206.0,208.0],["high","platform",300.0,168.0],["chip_a","chip",172.0,225.0],["chip_b","chip",264.0,185.0],["exit","lift",366.0,136.0]],"maps":["shaft"],"ui":[{"at":[12.0,12.0],"text":"SWITCHBACK","color":[132,234,198,255]},{"at":[217.0,14.0],"text":"CHIPS ","color":[253,205,116,255],"size":12,"value":"chips"},{"at":[12.0,168.0],"text":"ARROWS / WASD    SPACE TO JUMP","color":[174,191,220,255],"size":11}]}
+object chip {"size":[12.0,12.0],"color":[253,205,116,255],"shape":"circle","script":"collect"}
+object courier {"size":[16.0,14.0],"color":[132,234,198,255],"script":"drive","gravity":600.0}
+object lift {"size":[24.0,32.0],"color":[117,220,240,255],"script":"lift"}
+object platform {"size":[104.0,8.0],"color":[105,159,239,255],"one_way":true}
+object prompt {"size":[16.0,16.0],"color":[255,255,255,255],"script":"restart","hidden":true}
+tilemap shaft {"cell":16,"tiles":{"#":[[50,68,104,255],true],"+":[[25,35,62,255]],"-":[[30,41,66,255]]},"rows":["#......................................#","#......................................#","#.+....+....+....+....+....+....+....+.#","#......................................#","#......................................#","#......................................#","#.+....+....+....+....+....+....+....+.#","#......................................#","#......................................#","#......................................#","#.+....+....+....+....+....+....+....+.#","#......................................#","#......................................#","#......................................#","#.+....+....+....+....+....+....+....+.#","#......................................#","#.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-#","#......................................#","########################################","########################################"]}
+script collect
+step:
+  if touch("courier")
+    global chips = global(chips) + 1
+    emit glint
+    destroy
+  end
+---
+script drive
+create:
+  global chips = 0
+step:
+  move (down("right") - down("left")) * 120 * dt, 0
+  if grounded() && (pressed("fire") || pressed("up"))
+    set vy = -255
+  end
+---
+script lift
+step:
+  if global(chips) == 2 && touch("courier")
+    goto clear
+  end
+---
+script restart
+step:
+  if pressed("confirm")
+    goto shaft
+  end
+---
+particle glint {"count":16,"life":26,"speed":76.0,"radius":1.5,"color":[253,205,116,255]}

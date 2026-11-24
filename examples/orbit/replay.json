@@ -1,0 +1,52 @@
+{
+  "ticks": 220,
+  "input": [
+    [
+      1,
+      96,
+      "right"
+    ],
+    [
+      97,
+      128,
+      "down"
+    ],
+    [
+      129,
+      192,
+      "right"
+    ],
+    [
+      193,
+      220,
+      "down"
+    ]
+  ],
+  "expect": [
+    {
+      "at": 0,
+      "field": "count/core",
+      "is": 3
+    },
+    {
+      "at": 22,
+      "field": "global/score",
+      "is": 1
+    },
+    {
+      "at": 132,
+      "field": "global/score",
+      "is": 2
+    },
+    {
+      "at": 220,
+      "field": "global/score",
+      "is": 3
+    },
+    {
+      "at": 220,
+      "field": "room",
+      "is": "clear"
+    }
+  ]
+}

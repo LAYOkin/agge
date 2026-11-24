@@ -1,0 +1,18 @@
+[package]
+name = "agge-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+agge-core.workspace = true
+serde.workspace = true
+image.workspace = true
+
+font8x8 = "0.3"
+
+[dev-dependencies]
+serde_json.workspace = true
+
+

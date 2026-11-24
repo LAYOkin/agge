@@ -1,0 +1,88 @@
+{
+  "ticks": 522,
+  "input": [
+    [
+      1,
+      129,
+      "right"
+    ],
+    [
+      130,
+      151,
+      "up"
+    ],
+    [
+      152,
+      202,
+      "right"
+    ],
+    [
+      203,
+      224,
+      "down"
+    ],
+    [
+      225,
+      309,
+      "right"
+    ],
+    [
+      310,
+      331,
+      "down"
+    ],
+    [
+      332,
+      382,
+      "right"
+    ],
+    [
+      383,
+      404,
+      "up"
+    ],
+    [
+      405,
+      522,
+      "right"
+    ]
+  ],
+  "expect": [
+    {
+      "at": 0,
+      "field": "camera/x",
+      "is": 0
+    },
+    {
+      "at": 129,
+      "field": "global/relays",
+      "is": 1
+    },
+    {
+      "at": 129,
+      "field": "camera/x",
+      "is": 99.0,
+      "tolerance": 0.05
+    },
+    {
+      "at": 309,
+      "field": "global/relays",
+      "is": 2
+    },
+    {
+      "at": 522,
+      "field": "global/relays",
+      "is": 3
+    },
+    {
+      "at": 522,
+      "field": "room",
+      "is": "clear"
+    },
+    {
+      "at": 522,
+      "field": "camera/x",
+      "is": 0
+    }
+  ]
+}

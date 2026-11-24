@@ -1,0 +1,56 @@
+agge/1 {"title":"Signal Runner","start":"station","size":[480,288],"hz":60,"seed":31}
+room clear {"bg":[17,40,46,255],"instances":[["menu","prompt",0.0,0.0]],"ui":[{"at":[100.0,92.0],"text":"SIGNAL RESTORED","color":[149,234,210,255],"size":28},{"at":[100.0,150.0],"text":"All three power cells recovered.","color":[175,195,218,255],"size":15},{"at":[100.0,184.0],"text":"ENTER TO RUN AGAIN","color":[250,207,119,255],"size":13}]}
+room retry {"bg":[40,22,37,255],"instances":[["menu","prompt",0.0,0.0]],"ui":[{"at":[100.0,92.0],"text":"SIGNAL LOST","color":[254,142,160,255],"size":28},{"at":[100.0,150.0],"text":"The patrol intercepted you.","color":[175,195,218,255],"size":15},{"at":[100.0,184.0],"text":"ENTER TO RETRY","color":[250,207,119,255],"size":13}]}
+room station {"bg":[16,24,40,255],"instances":[["pilot","ship",48.0,80.0],["cell_a","core",96.0,80.0],["cell_b","core",240.0,144.0],["cell_c","core",368.0,192.0],["patrol","drone",240.0,224.0]],"maps":["station"],"lights":[{"at":[100.0,80.0],"radius":120.0,"color":[30,82,114,220]},{"at":[242.0,142.0],"radius":90.0,"color":[41,100,96,200]},{"at":[372.0,191.0],"radius":90.0,"color":[98,69,29,220]}],"ui":[{"at":[24.0,24.0],"text":"SIGNAL RUNNER","color":[149,234,210,255],"size":18},{"at":[350.0,26.0],"text":"CELLS ","color":[250,207,119,255],"size":14,"value":"score"},{"at":[24.0,251.0],"text":"WASD / ARROWS   COLLECT 3 CELLS   AVOID THE PATROL","color":[175,195,218,255],"size":11}],"darkness":0.33}
+object core {"size":[14.0,14.0],"color":[250,207,119,255],"shape":"circle","script":"collect"}
+object drone {"size":[24.0,18.0],"color":[255,111,145,255],"shape":"circle","script":"patrol"}
+object prompt {"size":[16.0,16.0],"color":[255,255,255,255],"script":"restart","hidden":true}
+object ship {"size":[18.0,18.0],"color":[255,255,255,255],"animation":"thrust","script":"drive"}
+sprite ship {"file":"art/ship.png","frames":[[0,0,16,16],[16,0,16,16]]}
+sprite terrain {"file":"art/terrain.png","frames":[[0,0,16,16],[16,0,16,16]]}
+animation thrust {"sprite":"ship","frames":[0,1],"fps":9}
+tilemap station {"cell":16,"atlas":"terrain","tiles":{"#":[0,true],"+":[1,false]},"rows":["##############################","#............................#","#..+..+..+..+..+..+..+..+....#","#............................#","#..................######....#","#............................#","#............................#","#....#######.................#","#............................#","#............................#","#........................###.#","#..+..+..+..+..+..+..+..+....#","#.....#######................#","#............................#","#............................#","#..+..+..+..+..+..+..+..+....#","#............................#","##############################"]}
+script collect
+step:
+  if touch("ship")
+    global score = global(score) + 1
+    emit pulse
+    sound collect
+    destroy
+  end
+---
+script drive
+create:
+  global score = 0
+step:
+  move motion.axis(down("left"), down("right"), 120), motion.axis(down("up"), down("down"), 120)
+  if touch("drone")
+    goto retry
+  else
+    if global(score) == 3
+      goto clear
+    end
+  end
+---
+script motion
+fn axis(negative, positive, speed) = (positive - negative) * speed * dt
+---
+script patrol
+create:
+  set vx = 90
+step:
+  if x >= 408
+    set vx = -90
+  end
+  if x <= 192
+    set vx = 90
+  end
+---
+script restart
+step:
+  if pressed("confirm")
+    goto station
+  end
+---
+audio collect {"file":"audio/collect.wav","gain":0.65}
+particle pulse {"count":22,"life":55,"speed":95.0,"radius":2.0,"color":[250,207,119,255]}

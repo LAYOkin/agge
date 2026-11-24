@@ -1,0 +1,27 @@
+{
+  "ticks": 72,
+  "input": [
+    [
+      1,
+      13,
+      "right"
+    ]
+  ],
+  "expect": [
+    {
+      "at": 0,
+      "field": "count/ball",
+      "is": 1
+    },
+    {
+      "at": 72,
+      "field": "global/hits",
+      "is": 1
+    },
+    {
+      "at": 72,
+      "field": "room",
+      "is": "court"
+    }
+  ]
+}

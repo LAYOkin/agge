@@ -1,0 +1,33 @@
+agge/1 {"title":"Rail Paddle","start":"court","size":[400,260],"hz":60,"seed":12}
+room court {"bg":[16,22,37,255],"instances":[["left_wall","rail",0,0],["right_wall","rail",392,0],["racket","paddle",172,222],["serve","ball",194,54]],"ui":[{"at":[20,16],"text":"RAIL PADDLE","size":16,"color":[149,234,210,255]},{"at":[310,18],"text":"HITS ","size":14,"value":"hits","color":[250,207,119,255]},{"at":[20,238],"text":"LEFT / RIGHT   KEEP THE BALL IN PLAY","size":11,"color":[175,195,218,255]}]}
+object rail {"size":[8,260],"color":[50,87,115,255],"solid":true}
+object paddle {"size":[56,10],"color":[149,234,210,255],"script":"paddle"}
+object ball {"size":[12,12],"color":[250,207,119,255],"shape":"circle","script":"bounce"}
+particle burst {"count":12,"life":24,"speed":110,"radius":1.6,"color":[250,207,119,255]}
+script paddle
+step:
+  move (down("right") - down("left")) * 230 * dt, 0
+---
+script bounce
+create:
+  set dx = 36
+  set dy = 180
+step:
+  if x < 9 || x > width - 21
+    set dx = -dx
+  end
+  if y < 38
+    set dy = abs(dy)
+  end
+  move dx * dt, dy * dt
+  if touch("paddle") && dy > 0
+    set dy = -abs(dy)
+    global hits = global(hits) + 1
+    emit burst
+  end
+  if y > height
+    global hits = 0
+    spawn ball 194, 54
+    destroy
+  end
+---

@@ -633,7 +633,7 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
             painter.rect_stroke(
                 rect.expand(2.),
                 2.,
-                Stroke::new(2., MINT),
+                Stroke::new(2.0_f32, MINT),
                 StrokeKind::Outside,
             );
         }

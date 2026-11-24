@@ -161,7 +161,7 @@ pub(super) fn sprite_canvas(ui: &mut Ui, work: &mut Workbench, id: &str, sprite:
             rect(frame),
             0.,
             Stroke::new(
-                if selected { 2. } else { 1. },
+                if selected { 2.0_f32 } else { 1.0_f32 },
                 if selected {
                     MINT
                 } else {

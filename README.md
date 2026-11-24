@@ -1,8 +1,16 @@
 # AGGE
 
-**Artificial General Game Engine** is a local, MIT-licensed 2D game engine written in Rust. The editor, CLI, and MCP server share the same project model and transaction layer. Games run in a separate desktop player that can be bundled with the project and its assets.
+**Artificial General Game Engine** is a free, open-source, agent-first 2D game engine written in Rust and licensed under MIT. It runs locally and includes a visual editor, a game scripting language, a desktop player, a CLI, and a native MCP server. The editor, CLI, and MCP server share the same project model and transaction layer, so developers and coding agents can work on the same game.
 
-An agent can ask for an asset ID, a JSON field, a script range, or the changes since a saved checkpoint. It can then place a grid of objects, stamp a tilemap, or rename a resource and its references in a single transaction. A fixed-tick replay can verify the result with assertions and return a PNG crop if visual inspection is needed.
+## Agent-first from project files to playtests
+
+AGGE is designed to minimize the tokens a coding agent needs to build, change, and verify a game. The principle applies throughout the engine. Whenever AGGE can do a job deterministically, it should do that work itself so the agent can focus on game design and behavior.
+
+- **Read only what the change needs.** Compact, Git-friendly project files and an indexed resource graph let agents request a single field, a script event, or a symbol's references. Named checkpoints report which resources changed between sessions.
+- **Describe edits at the level of intent.** A grid placement, tile stamp, or typed rename can replace pages of generated data or repeated edits. The engine resolves references, validates the batch, and records one undoable transaction. Concise scripts use engine primitives for game logic such as input and collision.
+- **Verify with the game runtime.** Fixed-tick replays run the same simulation as the desktop player. Assertions check specific gameplay outcomes, and agents can request selected runtime values or a small PNG crop when they need more detail.
+
+AGGE targets **80–90% fewer tokens on suitable tasks**. Four scripted edit workflows measured **7.9–59.5% lower token counts** against equivalent Godot workflows, and both engines passed the correctness checks in all four cases. End-to-end model-session savings are still unverified. [Benchmark results and reproduction steps](bench/README.md)
 
 ## Play or edit a game
 
@@ -29,7 +37,7 @@ In **Signal Runner**, use the arrows or WASD to collect three power cells and av
 
 The editor supports room placement, object properties, sprite-sheet frames, animation playback, tile painting, scripts, audio audition, and particle previews. The runtime supports fixed-step movement and AABB collision, gravity, scrolling cameras, sprites, animation, room lighting, sound, keyboard actions, HUD labels, and particles. The Windows editor, headless workflow, and desktop package were exercised locally. CI is configured for Windows, Linux, and macOS builds.
 
-The engine is at version 0.1. It has no browser or mobile player, rigid-body solver, in-editor pixel painter, or general UI layout system. Token reductions vary by task. The current benchmark measures scripted edit transcripts using a real tokenizer, with engine-level correctness checks. It has yet to establish the 80–90% goal in model sessions.
+The engine is at version 0.1. It has no browser or mobile player, rigid-body solver, in-editor pixel painter, or general UI layout system.
 
 ## Development
 

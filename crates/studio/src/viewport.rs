@@ -98,7 +98,7 @@ impl View {
         if !self.visible.is_positive() || spacing < 5. {
             return;
         }
-        let stroke = Stroke::new(1., Color32::from_white_alpha(alpha));
+        let stroke = Stroke::new(1.0_f32, Color32::from_white_alpha(alpha));
         let first_x = ((self.visible.left() - self.rect.left()) / spacing)
             .ceil()
             .max(0.);

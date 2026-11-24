@@ -98,7 +98,7 @@ pub(super) fn guide(
         Vec2::new(viewport[0] as f32, viewport[1] as f32) * scale,
     );
     if size != viewport {
-        let stroke = Stroke::new(1.5, MINT.gamma_multiply(0.6));
+        let stroke = Stroke::new(1.5_f32, MINT.gamma_multiply(0.6));
         painter.rect_stroke(frame, 0., stroke, StrokeKind::Inside);
     }
     if room.camera.follow.is_some() && room.camera.dead.iter().all(|&d| d > 0.) {
@@ -107,7 +107,7 @@ pub(super) fn guide(
         painter.rect_stroke(
             rect,
             0.,
-            Stroke::new(1., Color32::from_white_alpha(96)),
+            Stroke::new(1.0_f32, Color32::from_white_alpha(96)),
             StrokeKind::Inside,
         );
     }

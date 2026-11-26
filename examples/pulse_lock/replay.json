@@ -24,6 +24,18 @@
         {"at": 62, "field": "entity/indicator/x", "is": 122}
       ]
     },
+    "wrong_direction": {
+      "ticks": 221,
+      "input": [[176, 176, "lock"], [221, 221, "lock"]],
+      "expect": [
+        {"at": 176, "field": "entity/cursor/x", "is": 124},
+        {"at": 176, "field": "entity/cursor/direction", "is": -1},
+        {"at": 176, "field": "global/locks", "is": 0},
+        {"at": 176, "field": "global/misses", "is": 1},
+        {"at": 221, "field": "global/locks", "is": 1},
+        {"at": 221, "field": "global/misses", "is": 1}
+      ]
+    },
     "restart": {
       "ticks": 85,
       "input": [[23, 23, "lock"], [52, 52, "lock"], [81, 81, "lock"], [85, 85, "confirm"]],

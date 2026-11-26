@@ -163,6 +163,42 @@ step:
 }
 
 #[test]
+fn replay_seed_overrides_create_and_step_randomness_without_changing_the_project() {
+    let project = Project::parse(
+        r#"agge/1 {"seed":5581}
+room main {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+script drive
+create:
+  global roll = rand()
+step:
+  global roll = rand()
+---
+"#,
+    )
+    .unwrap();
+    let game = CompiledGame::new(project).unwrap();
+    let run = |seed: Option<u64>| {
+        let spec: Replay = serde_json::from_value(serde_json::json!({
+            "seed": seed, "ticks": 1, "sample": [[0, "global/roll"], [1, "global/roll"]]
+        }))
+        .unwrap();
+        let (world, report) = replay_compiled(&game, &spec).unwrap();
+        assert!(report.passed());
+        assert_eq!(world.project().settings.seed, 5581);
+        report.samples
+    };
+
+    let default = run(None);
+    assert_eq!(default, run(Some(5581)));
+    let alternate = run(Some(9843));
+    assert_ne!(default[0], alternate[0]);
+    assert_ne!(default[1], alternate[1]);
+    assert_eq!(alternate, run(Some(9843)));
+    assert_eq!(default, run(None));
+}
+
+#[test]
 fn replay_counts_queued_sounds_by_tick_and_clip() {
     let project = Project::parse(
         r#"agge/1 {}

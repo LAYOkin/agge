@@ -257,7 +257,11 @@ impl CompiledGame {
     }
 
     pub fn preview(&self, room: Option<&str>) -> Result<World> {
-        let mut world = World::prepare(self, room)?;
+        self.preview_seeded(room, None)
+    }
+
+    pub(crate) fn preview_seeded(&self, room: Option<&str>, seed: Option<u64>) -> Result<World> {
+        let mut world = World::prepare(self, room, seed)?;
         world.fault = world.enter_room().err();
         Ok(world)
     }
@@ -310,13 +314,13 @@ impl World {
         self.fault.as_ref()
     }
 
-    fn prepare(game: &CompiledGame, room: Option<&str>) -> Result<Self> {
+    fn prepare(game: &CompiledGame, room: Option<&str>, seed: Option<u64>) -> Result<Self> {
         let project = &game.project;
         let room = room.unwrap_or(&project.settings.start).to_owned();
         if project.get(Kind::Room, &room).is_none() {
             return Err(fail(format!("absent room/{room}")));
         }
-        let seed = project.settings.seed;
+        let seed = seed.unwrap_or(project.settings.seed);
         Ok(Self {
             project: Arc::clone(project),
             index: Arc::clone(&game.index),

@@ -16,6 +16,8 @@ pub struct Replay {
     pub ticks: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<InputSpan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -74,6 +76,7 @@ impl ReplayRecorder {
             spec: Replay {
                 ticks: 0,
                 room: Some(room.into()),
+                seed: None,
                 input: vec![],
                 expect: vec![],
                 sample: Samples::default(),
@@ -183,7 +186,7 @@ pub fn replay_compiled(game: &CompiledGame, spec: &Replay) -> Result<(World, Rep
     if samples.iter().any(|(_, (tick, _))| *tick > spec.ticks) {
         return Err(fail("sample tick exceeds replay length"));
     }
-    let mut world = game.preview(spec.room.as_deref())?;
+    let mut world = game.preview_seeded(spec.room.as_deref(), spec.seed)?;
     let mut report = Report {
         ticks: 0,
         assertions: 0,

@@ -14,6 +14,8 @@
 
 Put PNG and WAV or OGG assets in folders beside the project. Create a **Sprite** or **Audio** resource with a relative path such as `art/pilot.png`. For sprite sheets, add one [x, y, width, height] rectangle per frame, then make an **Animation** that lists the frame indices in order. Link the object to the animation or directly to the sprite.
 
+If you close Studio with unapplied asset edits or project settings, choose **Keep editing** to return to your changes or **Discard and close** to exit.
+
 The animation inspector supports loop, one-shot, and ping-pong playback. Use the frame slider to inspect individual frames. In the room inspector, **Music** selects a looping audio resource, and **HUD meters** binds bars to globals such as health or charge. **Sort actors by feet** enables top-down draw ordering within each object's draw depth.
 
 Expand **References** in the inspector to navigate between related resources. Incoming script references can jump to the call site, and room references can select a linked placement.

@@ -51,6 +51,7 @@ impl eframe::App for Studio {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         if let Some(workbench) = &mut self.work {
             workbench.ui(ctx);
+            workbench.confirm_close(ctx);
             return;
         }
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -116,6 +117,7 @@ pub struct Workbench {
     settings: Option<Settings>,
     inspect: bool,
     jump_line: Option<usize>,
+    close_prompt: bool,
 }
 impl Workbench {
     fn open(store: Store) -> Result<Self> {
@@ -145,6 +147,7 @@ impl Workbench {
             settings: None,
             inspect: false,
             jump_line: None,
+            close_prompt: false,
         };
         let start = this.loaded.project.settings.start.clone();
         this.select(Kind::Room, &start);
@@ -178,6 +181,40 @@ impl Workbench {
     }
     fn dirty(&self) -> bool {
         self.draft.as_ref().is_some_and(Draft::dirty)
+    }
+    fn confirm_close(&mut self, ctx: &Context) {
+        let settings_dirty = self
+            .settings
+            .as_ref()
+            .is_some_and(|settings| settings != &self.loaded.project.settings);
+        if ctx.input(|input| input.viewport().close_requested()) && (self.dirty() || settings_dirty)
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.close_prompt = true;
+        }
+        if !self.close_prompt {
+            return;
+        }
+
+        let dialog = egui::Modal::new(egui::Id::new("confirm_close")).show(ctx, |ui| {
+            ui.heading("Discard unsaved changes?");
+            ui.label("Closing Studio will discard changes you haven’t applied.");
+            ui.horizontal(|ui| {
+                let keep_editing = ui.button("Keep editing").clicked();
+                let discard = ui.button("Discard and close").clicked();
+                (keep_editing, discard)
+            })
+            .inner
+        });
+        let (keep_editing, discard) = dialog.inner;
+        if discard {
+            self.draft = None;
+            self.settings = None;
+            self.close_prompt = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if keep_editing || dialog.should_close() {
+            self.close_prompt = false;
+        }
     }
     fn open_reference(&mut self, reference: &str, location: &str) {
         if self.dirty() {
@@ -640,14 +677,17 @@ impl Workbench {
         }
     }
     fn ui(&mut self, ctx: &Context) {
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
+        if !self.close_prompt
+            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5))
+        {
             if self.play.is_some() {
                 self.play = None;
             } else {
                 self.command(Self::play);
             }
         }
-        if self.play.is_none()
+        if !self.close_prompt
+            && self.play.is_none()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S))
         {
             self.command(Self::save);

@@ -381,9 +381,21 @@ impl Workbench {
         }
     }
 
+    fn new_resource_id_error(&self, kind: Kind, id: &str) -> Option<&'static str> {
+        if !valid_id(id) {
+            return Some(
+                "Use 1–48 lowercase letters, digits, or underscores, starting with a letter.",
+            );
+        }
+        self.loaded
+            .project
+            .get(kind, id)
+            .map(|_| "An asset of this kind already uses that ID.")
+    }
+
     fn new_resource(&mut self, kind: Kind, id: String) -> Result<()> {
-        if !valid_id(&id) || self.loaded.project.get(kind, &id).is_some() {
-            return Err(fail("enter a unique lowercase ID"));
+        if let Some(message) = self.new_resource_id_error(kind, &id) {
+            return Err(fail(message));
         }
         let default = match kind {
             Kind::Room | Kind::Object => "{}",
@@ -653,8 +665,14 @@ impl Workbench {
                         }
                     });
                 ui.add(egui::TextEdit::singleline(&mut id).hint_text("resource_id"));
+                let id_error = self.new_resource_id_error(kind, &id);
+                if let Some(message) = id_error.filter(|_| !id.is_empty()) {
+                    ui.colored_label(Color32::LIGHT_RED, message);
+                }
                 ui.horizontal(|ui| {
-                    let create = ui.button("Create draft").clicked();
+                    let create = ui
+                        .add_enabled(id_error.is_none(), egui::Button::new("Create draft"))
+                        .clicked();
                     let cancel = ui.button("Cancel").clicked();
                     (create, cancel)
                 })

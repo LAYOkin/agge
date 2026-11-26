@@ -257,6 +257,44 @@ fn cli_batches_reads_and_leaves_failed_or_previewed_edits_uncommitted() {
 }
 
 #[test]
+fn cli_can_pin_a_single_replay_to_a_project_revision() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("game.agge");
+    let store = agge_core::store::Store::new(&file);
+    store.init(&agge_core::Project::default()).unwrap();
+    let original = store.load().unwrap().revision;
+    let updated = store
+        .update(Some(&original), |project| {
+            project.settings.title = "Updated title".into();
+            Ok(())
+        })
+        .unwrap()
+        .revision;
+    let replay = |base: &str| {
+        Command::new(env!("CARGO_BIN_EXE_agge"))
+            .arg("test")
+            .arg(&file)
+            .arg(json!({"ticks":0,"base":base}).to_string())
+            .output()
+            .unwrap()
+    };
+
+    let stale = replay(&original);
+    assert_eq!(stale.status.code(), Some(2));
+    assert!(stale.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&stale.stderr).trim_end(),
+        format!("stale revision; current is {updated}")
+    );
+
+    let current = replay(&updated);
+    assert!(current.status.success());
+    let report: Value = serde_json::from_slice(&current.stdout).unwrap();
+    assert_eq!(report["revision"], updated);
+    assert_eq!(report["passed"], true);
+}
+
+#[test]
 fn asset_queries_inspect_relative_media_without_returning_binary_data() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("game.agge");

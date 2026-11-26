@@ -8,6 +8,16 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{cell::OnceCell, collections::BTreeMap};
 
+fn require_revision(loaded: &Loaded, base: Option<&str>) -> Result<()> {
+    if base.is_some_and(|base| base != loaded.revision) {
+        return Err(fail(format!(
+            "stale revision; current is {}",
+            loaded.revision
+        )));
+    }
+    Ok(())
+}
+
 pub fn check(store: &Store) -> Result<(Value, bool)> {
     let loaded = store.load()?;
     let index = Index::build(&loaded.project);
@@ -89,14 +99,7 @@ pub fn query_with_cache(store: &Store, args: Value, cache: &mut QueryCache) -> R
             return Err(fail("read must contain 1–16 queries"));
         }
         let (loaded, index) = cache.snapshot(store)?;
-        if let Some(base) = batch.base.as_deref()
-            && base != loaded.revision
-        {
-            return Err(fail(format!(
-                "stale revision; current is {}",
-                loaded.revision
-            )));
-        }
+        require_revision(loaded, batch.base.as_deref())?;
         let mut data = Vec::with_capacity(batch.read.len());
         let mut bytes = 0;
         for args in batch.read {
@@ -440,14 +443,7 @@ fn run_suite(store: &Store, args: Value) -> Result<Simulation> {
         ));
     }
     let loaded = store.load()?;
-    if let Some(base) = suite.base.as_deref()
-        && base != loaded.revision
-    {
-        return Err(fail(format!(
-            "stale revision; current is {}",
-            loaded.revision
-        )));
-    }
+    require_revision(&loaded, suite.base.as_deref())?;
     let game = CompiledGame::new(loaded.project)?;
     let cases = suite.cases.len();
     let (mut assertions, mut ticks, mut failed) = (0, 0, 0);
@@ -493,6 +489,8 @@ pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simul
     let fields = args
         .as_object_mut()
         .ok_or_else(|| fail("expected replay object"))?;
+    let base: Option<String> =
+        serde_json::from_value(fields.remove("base").unwrap_or(Value::Null))?;
     let selection: Option<Selection> = fields
         .remove("select")
         .map(serde_json::from_value)
@@ -506,6 +504,7 @@ pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simul
     }
     let replay_spec: Replay = serde_json::from_value(args)?;
     let loaded = store.load()?;
+    require_revision(&loaded, base.as_deref())?;
     let (world, report) = replay(loaded.project, &replay_spec)?;
     let ok = report.passed();
     let mut result = json!({"revision":loaded.revision,"passed":ok,"report":report});

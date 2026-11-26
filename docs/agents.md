@@ -91,7 +91,9 @@ Send `select` only when you need runtime state. Selected state includes the came
 
 For smaller responses, use `sample:[[0,"entity/hero/x"],[12,"global/score"]]`. To read the same fields at several ticks, use `sample:{"at":[0,6,12],"fields":["entity/hero/x","entity/hero/y"]}`. Reports return just the values in request order, with fields grouped by tick in the grid form. A missing field value or a tick skipped after a fault returns `null`. Samples are observations. Add assertions to make a result fail when a value is wrong.
 
-Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}}}` to `agge test` or `agge_run` for a suite. Each case starts a fresh world from the same compiled revision. Request `base` to pin the revision and `detail:true` to include successful reports and samples. By default the response summarizes passing cases and includes reports only for failures. Each report keeps the first eight failed assertions and counts the rest. Suites accept up to 32 cases and 120,000 total ticks. Selective state and PNG crops are available on a single replay.
+Set `base` to the revision returned by a query to pin a single replay or a suite to that project source. If the project has changed, AGGE rejects the request and reports the current revision.
+
+Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}}}` to `agge test` or `agge_run` for a suite. Each case starts a fresh world from the same compiled revision. Set `detail:true` to include successful reports and samples. By default the response summarizes passing cases and includes reports only for failures. Each report keeps the first eight failed assertions and counts the rest. Suites accept up to 32 cases and 120,000 total ticks. Selective state and PNG crops are available on a single replay.
 
 
 

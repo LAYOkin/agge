@@ -105,6 +105,8 @@ Set `seed` on a replay to override the project's random seed from tick 0. Use an
 
 Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}}}` to `agge test` or `agge_run` for a suite. Each case starts a fresh world from the same compiled revision. Set `detail:true` to include successful reports and samples. By default the response summarizes passing cases and includes reports only for failures. Each report keeps the first eight failed assertions and counts the rest. Suites accept up to 32 cases and 120,000 total ticks. Selective state and PNG crops are available on a single replay.
 
+Pass a case name after the suite on the CLI to run only that case, for example `agge test PROJECT @replay.json startup`.
+
 
 
 ### Inspect runtime faults

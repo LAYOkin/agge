@@ -427,14 +427,20 @@ struct Suite {
     cases: BTreeMap<String, Value>,
 }
 
-fn run_suite(store: &Store, args: Value) -> Result<Simulation> {
+fn run_suite(store: &Store, args: Value, selected: Option<&str>) -> Result<Simulation> {
     let Suite {
         base,
         detail,
-        cases,
+        mut cases,
     } = serde_json::from_value(args)?;
     if !(1..=32).contains(&cases.len()) {
         return Err(fail("suite requires 1–32 named cases"));
+    }
+    if let Some(selected) = selected {
+        if !cases.contains_key(selected) {
+            return Err(fail(format!("unknown replay case {selected:?}")));
+        }
+        cases.retain(|name, _| name == selected);
     }
     let mut replays = Vec::with_capacity(cases.len());
     for (name, case) in cases {
@@ -494,18 +500,25 @@ fn run_suite(store: &Store, args: Value) -> Result<Simulation> {
 }
 
 #[derive(PartialEq)]
-pub enum SimulationMode {
+pub enum SimulationMode<'a> {
     Test,
+    TestCase(&'a str),
     Inspect,
     Capture,
 }
 
-pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode) -> Result<Simulation> {
+pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Result<Simulation> {
+    if let SimulationMode::TestCase(selected) = mode {
+        if args.get("cases").is_none() {
+            return Err(fail("a case name requires a replay suite"));
+        }
+        return run_suite(store, args, Some(selected));
+    }
     if args.get("cases").is_some() {
         if mode == SimulationMode::Capture {
             return Err(fail("capture requires a single replay"));
         }
-        return run_suite(store, args);
+        return run_suite(store, args, None);
     }
     let fields = args
         .as_object_mut()

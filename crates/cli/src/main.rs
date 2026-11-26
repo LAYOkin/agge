@@ -19,7 +19,8 @@ agge check PROJECT
 agge query PROJECT [JSON]
 agge edit PROJECT JSON
 agge undo|redo PROJECT [REVISION]
-agge test|inspect PROJECT JSON
+agge test PROJECT JSON [CASE]
+agge inspect PROJECT JSON
 agge capture PROJECT JSON OUTPUT.png
 agge knowledge PROJECT JSON
 agge mcp PROJECT
@@ -69,9 +70,9 @@ fn run() -> Result<bool> {
     let arity = match command {
         "init" | "check" | "mcp" => 2..=2,
         "query" | "undo" | "redo" => 2..=3,
-        "edit" | "inspect" | "knowledge" | "test" => 3..=3,
+        "edit" | "inspect" | "knowledge" => 3..=3,
         "capture" => 4..=4,
-        "export" => 3..=4,
+        "export" | "test" => 3..=4,
         _ => return Err(fail(format!("unknown command {command}"))),
     };
     if !arity.contains(&args.len()) {
@@ -105,7 +106,10 @@ fn run() -> Result<bool> {
         "knowledge" => output(service::knowledge(&store, argument()?)?),
         "test" | "inspect" | "capture" => {
             let mode = match command {
-                "test" => service::SimulationMode::Test,
+                "test" => match args.get(3) {
+                    Some(case) => service::SimulationMode::TestCase(argument_text(case)?),
+                    None => service::SimulationMode::Test,
+                },
                 "capture" => service::SimulationMode::Capture,
                 _ => service::SimulationMode::Inspect,
             };

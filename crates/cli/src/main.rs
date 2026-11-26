@@ -22,6 +22,7 @@ agge undo|redo PROJECT [REVISION]
 agge test PROJECT JSON [CASE]
 agge inspect PROJECT JSON
 agge capture PROJECT JSON OUTPUT.png
+agge art PROJECT JSON OUTPUT.png
 agge knowledge PROJECT JSON
 agge mcp PROJECT
 agge export PROJECT DIRECTORY [PLAYER_BINARY]
@@ -71,7 +72,7 @@ fn run() -> Result<bool> {
         "init" | "check" | "mcp" => 2..=2,
         "query" | "undo" | "redo" => 2..=3,
         "edit" | "inspect" | "knowledge" => 3..=3,
-        "capture" => 4..=4,
+        "capture" | "art" => 4..=4,
         "export" | "test" => 3..=4,
         _ => return Err(fail(format!("unknown command {command}"))),
     };
@@ -104,6 +105,14 @@ fn run() -> Result<bool> {
             output(json!(store.travel(revision, command == "redo")?))
         }
         "knowledge" => output(service::knowledge(&store, argument()?)?),
+        "art" => {
+            let (value, _, image) =
+                service::art(&store, argument()?, &mut service::QueryCache::default())?;
+            if let Some(bytes) = image {
+                write_capture(store.path(), Path::new(&args[3]), &bytes)?;
+            }
+            output(value)
+        }
         "test" | "inspect" | "capture" => {
             let mode = match command {
                 "test" => match args.get(3) {

@@ -107,13 +107,14 @@ fn respond(
     Some(json!({"jsonrpc":"2.0","id":id,"result":result}))
 }
 
-const NAMES: [&str; 6] = [
+const NAMES: [&str; 7] = [
     "agge_query",
     "agge_edit",
     "agge_check",
     "agge_run",
     "agge_history",
     "agge_knowledge",
+    "agge_art",
 ];
 
 fn tool_list() -> Vec<Value> {
@@ -128,8 +129,8 @@ fn tool_list() -> Vec<Value> {
     vec![
         tool(
             NAMES[0],
-            "Read IDs, fields, tile areas, placements, metadata, symbols, refs or changes. read batches queries at one revision.",
-            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"area":array,"placements":text,"object":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
+            "Read IDs, fields, placements, pixel poses or cropped rows, metadata, refs or changes. read batches queries at one revision.",
+            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"pixel":text,"frame":text,"layer":text,"area":array,"placements":text,"object":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
             json!([]),
         ),
         tool(
@@ -161,6 +162,12 @@ fn tool_list() -> Vec<Value> {
             "Read or persist a structured project fact. op is get, put or remove.",
             json!({"op":text,"key":text,"value":{}}),
             json!(["op"]),
+        ),
+        tool(
+            NAMES[6],
+            "Inspect a pixel pose or contact sheet as PNG. Crop, scale, isolate a layer, or preview edits against a revision.",
+            json!({"pixel":text,"frames":{"type":["string","array"]},"layer":text,"area":array,"scale":number,"columns":number,"base":text,"ops":array}),
+            json!(["pixel"]),
         ),
     ]
 }
@@ -204,6 +211,7 @@ fn call(store: &Store, name: &str, args: Value, queries: &mut service::QueryCach
                 json!(store.travel(travel.base.as_deref(), travel.redo)?)
             }
             "agge_knowledge" => service::knowledge(store, args)?,
+            "agge_art" => return service::art(store, args, queries),
             _ => unreachable!(),
         };
         Ok((value, true, None))

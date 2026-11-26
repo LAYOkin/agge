@@ -5,6 +5,84 @@ use std::{
 };
 
 #[test]
+fn pixel_preview_renders_uncommitted_local_edits_then_returns_exact_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("game.agge");
+    std::fs::write(
+        &file,
+        concat!(
+            "agge/1 {}\nroom main {}\n",
+            "palette sea {\"swatches\":{\"a\":\"c4fef2\",\"b\":\"224466\"}}\n",
+            "pixel gem\ncanvas 4 4\nstyle sea\nlayer light\n  px a 1 1\nframe enter\n---\n",
+        ),
+    )
+    .unwrap();
+    let loaded = agge_core::store::Store::new(&file).load().unwrap();
+    let original = std::fs::read(&file).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agge"))
+        .arg("mcp")
+        .arg(&file)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let base = loaded.revision;
+    let invoke = |id, name, arguments| {
+        json!({"jsonrpc":"2.0","id":id,"method":"tools/call",
+        "params":{"name":name,"arguments":arguments}})
+    };
+    let edit =
+        json!({"op":"pixel_patch","id":"gem","frame":"enter","layer":"light","draw":"px b 1 1"});
+    let image = json!({"pixel":"gem","frames":"enter","area":[1,1,1,1],"scale":2,"base":base});
+    let mut preview = image.clone();
+    preview["ops"] = json!([edit]);
+    let requests = [
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}),
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+        invoke(2, "agge_art", image),
+        invoke(3, "agge_art", preview.clone()),
+        invoke(
+            4,
+            "agge_query",
+            json!({"base":base,"read":[{"pixel":"gem","frame":"enter","layer":"light","area":[1,1,1,1]},{"get":"pixel/gem","lines":[4,1]}]}),
+        ),
+        invoke(
+            5,
+            "agge_art",
+            json!({"pixel":"gem","base":"other","ops":preview["ops"]}),
+        ),
+    ];
+    let mut input = child.stdin.take().unwrap();
+    for request in requests {
+        writeln!(input, "{request}").unwrap();
+    }
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let responses = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    let result = |id: usize| &responses[id - 1]["result"];
+    let metadata = |id| {
+        serde_json::from_str::<Value>(result(id)["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+    assert_eq!(result(2)["content"][1]["mimeType"], "image/png");
+    assert_eq!(result(3)["isError"], false);
+    assert_ne!(
+        result(2)["content"][1]["data"],
+        result(3)["content"][1]["data"]
+    );
+    assert_eq!(metadata(3)["size"], json!([2, 2]));
+    assert_eq!(metadata(3)["preview"], true);
+    assert_eq!(metadata(4)["data"][0]["data"], json!(["a"]));
+    assert_eq!(metadata(4)["data"][1]["data"], "  px a 1 1");
+    assert_eq!(result(5)["isError"], true);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+}
+
+#[test]
 fn mcp_discovers_tools_edits_and_returns_cropped_image() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("game.agge");
@@ -109,7 +187,7 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
         .collect::<Vec<_>>();
     assert_eq!(responses.len(), 29);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
-    assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 6);
+    assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 7);
     assert_eq!(responses[2]["result"]["isError"], false);
     assert_eq!(responses[3]["result"]["isError"], false);
     assert_eq!(

@@ -24,6 +24,7 @@ pub struct Index {
     pub edges: Vec<Edge>,
     pub diagnostics: Vec<Diagnostic>,
     pub programs: BTreeMap<String, script::Program>,
+    pub pixels: BTreeMap<String, std::sync::Arc<crate::pixel::Art>>,
 }
 impl Index {
     fn error(&mut self, code: &'static str, at: &str, message: impl Into<String>) {
@@ -72,6 +73,7 @@ impl Index {
             symbols: Self::manifest(project),
             ..Self::default()
         };
+        index.index_pixels(project);
         index.link("project", Kind::Room, &project.settings.start, "start");
         if !(1..=240).contains(&project.settings.hz)
             || !project
@@ -86,6 +88,8 @@ impl Index {
                 "size must be 1–4096 per axis and hz must be 1–240",
             );
         }
+        let mut generated = BTreeSet::new();
+        let mut sheet_pixels = 0usize;
         for ((kind, id), resource) in &project.resources {
             let key = format!("{kind}/{id}");
             if !valid_id(id) || *kind != resource.kind() {
@@ -237,7 +241,39 @@ impl Index {
                     }
                 }
                 Resource::Sprite(sprite) => {
-                    index.file(&key, &sprite.file, &["png"]);
+                    if let Some(source) = &sprite.pixel {
+                        index.link(&key, Kind::Pixel, source, "pixel");
+                        if !sprite.file.is_empty() || !sprite.frames.is_empty() {
+                            index.error("sprite_source", &key, "use pixel poses or PNG frames");
+                        }
+                        if let Some(art) = index.pixels.get(source) {
+                            match sprite.pixel_poses(art) {
+                                Ok(poses) if generated.insert((source, &sprite.poses)) => {
+                                    let columns = crate::pixel::sheet_columns(poses.len());
+                                    sheet_pixels = sheet_pixels.saturating_add(
+                                        art.size[0]
+                                            * art.size[1]
+                                            * columns
+                                            * poses.len().div_ceil(columns),
+                                    );
+                                    if sheet_pixels > crate::pixel::MAX_GENERATED_PIXELS {
+                                        index.error(
+                                            "sprite_sheet_limit",
+                                            &key,
+                                            "generated sprite sheets exceed 16 million pixels",
+                                        );
+                                    }
+                                }
+                                Err(error) => index.error("sprite_pose", &key, error.to_string()),
+                                _ => (),
+                            }
+                        }
+                    } else {
+                        index.file(&key, &sprite.file, &["png"]);
+                        if !sprite.poses.is_empty() {
+                            index.error("sprite_source", &key, "poses require a pixel source");
+                        }
+                    }
                     if sprite.frames.iter().any(|&[x, y, w, h]| {
                         w == 0 || h == 0 || x.saturating_add(w) > 8192 || y.saturating_add(h) > 8192
                     }) {
@@ -248,7 +284,9 @@ impl Index {
                     index.link(&key, Kind::Sprite, &anim.sprite, "sprite");
                     if anim.frames.is_empty()
                         || !(1..=240).contains(&anim.fps)
-                        || matches!(project.get(Kind::Sprite, &anim.sprite), Some(Resource::Sprite(sprite)) if anim.frames.iter().any(|&i| i >= sprite.frame_count()))
+                        || index
+                            .sprite_frame_count(project, &anim.sprite)
+                            .is_some_and(|count| anim.frames.iter().any(|&i| i >= count))
                     {
                         index.error(
                             "animation_frames",
@@ -264,12 +302,12 @@ impl Index {
                     let atlas = map
                         .atlas
                         .as_ref()
-                        .and_then(|id| project.get(Kind::Sprite, id));
+                        .and_then(|id| index.sprite_frame_count(project, id));
                     for (symbol, tile) in &map.tiles {
                         if let Some(frame) = tile.frame() {
                             let at = format!("{key}/tiles/{symbol}");
                             match atlas {
-                                Some(Resource::Sprite(sprite)) if frame >= sprite.frame_count() => {
+                                Some(count) if frame >= count => {
                                     index.error(
                                         "tile_frame",
                                         &at,
@@ -350,6 +388,7 @@ impl Index {
                         );
                     }
                 }
+                Resource::Pixel(_) | Resource::Palette(_) => (),
             }
         }
         for (script, program) in &index.programs {
@@ -374,6 +413,64 @@ impl Index {
             }
         }
         index
+    }
+
+    fn index_pixels(&mut self, project: &Project) {
+        let mut renderer = crate::pixel::Renderer::new(project);
+        for ((_, id), resource) in &project.resources {
+            match resource {
+                Resource::Palette(_) => {
+                    if let Err(error) = renderer.profile(id) {
+                        self.error("palette", &format!("palette/{id}"), error.to_string());
+                    }
+                }
+                Resource::Pixel(source) => {
+                    let key = format!("pixel/{id}");
+                    match crate::pixel::source::parse(source) {
+                        Ok(program) => {
+                            for reference in program.references {
+                                self.link(
+                                    &key,
+                                    reference.kind,
+                                    reference.id,
+                                    &format!("line/{}", reference.line),
+                                );
+                            }
+                            match renderer.render(id) {
+                                Ok(art) => {
+                                    self.pixels.insert(id.clone(), art);
+                                }
+                                Err(error) => self.pixel_error(&key, error),
+                            }
+                        }
+                        Err(error) => self.pixel_error(&key, error),
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
+    fn pixel_error(&mut self, key: &str, error: impl std::fmt::Display) {
+        let message = error.to_string();
+        if let Some((line, detail)) = message.split_once(": ")
+            && line.parse::<usize>().is_ok()
+        {
+            self.error("pixel", &format!("{key}/line/{line}"), detail);
+        } else {
+            self.error("pixel", key, message);
+        }
+    }
+
+    pub fn sprite_frame_count(&self, project: &Project, id: &str) -> Option<usize> {
+        let Resource::Sprite(sprite) = project.get(Kind::Sprite, id)? else {
+            return None;
+        };
+        match &sprite.pixel {
+            Some(id) if sprite.poses.is_empty() => Some(self.pixels.get(id)?.frame_names().len()),
+            Some(_) => Some(sprite.poses.len()),
+            None => Some(sprite.frame_count()),
+        }
     }
     fn file(&mut self, key: &str, file: &str, extensions: &[&str]) {
         if asset_path(file).is_ok_and(|path| {
@@ -434,10 +531,20 @@ pub enum Edit {
         id: String,
         to: String,
     },
+    PixelPatch {
+        id: String,
+        frame: Option<String>,
+        layer: String,
+        draw: String,
+        #[serde(default)]
+        replace: bool,
+    },
     Settings {
         fields: BTreeMap<String, Value>,
     },
     Splice {
+        #[serde(default = "script_kind")]
+        kind: Kind,
         id: String,
         at: [usize; 2],
         text: String,
@@ -543,13 +650,17 @@ fn empty_tile() -> char {
     '.'
 }
 
+fn script_kind() -> Kind {
+    Kind::Script
+}
+
 impl Edit {
     pub fn apply(self, project: &mut Project) -> Result<()> {
         match self {
             Self::Put { kind, id, data } => {
-                let value = if kind == Kind::Script {
+                let value = if kind.is_source() {
                     data.as_str()
-                        .ok_or_else(|| fail("script data must be a string"))?
+                        .ok_or_else(|| fail("source data must be a string"))?
                         .to_owned()
                 } else {
                     data.to_string()
@@ -576,8 +687,28 @@ impl Edit {
             }
             Self::Rename { kind, id, to } => rename(project, kind, &id, &to)?,
             Self::RenameGlobal { id, to } => rename_global(project, &id, &to)?,
-            Self::Splice { id, at, text } => {
-                let source = script_mut(project, &id)?;
+            Self::PixelPatch {
+                id,
+                frame,
+                layer,
+                draw,
+                replace,
+            } => {
+                let Some(Resource::Pixel(source)) = project.get_mut(Kind::Pixel, &id) else {
+                    return Err(fail(format!("absent pixel/{id}")));
+                };
+                *source =
+                    crate::pixel::source::patch(source, frame.as_deref(), &layer, &draw, replace)?;
+            }
+            Self::Splice { kind, id, at, text } => {
+                let source = match project.get_mut(kind, &id) {
+                    Some(Resource::Script(source) | Resource::Pixel(source)) => source,
+                    _ => {
+                        return Err(fail(format!(
+                            "expected an existing source resource at {kind}/{id}"
+                        )));
+                    }
+                };
                 *source = script::splice_lines(source, at, &text)?;
             }
             Self::ScriptEvent { id, event, body } => {
@@ -694,6 +825,11 @@ impl Edit {
                 let Some(Resource::Sprite(sprite)) = project.get_mut(Kind::Sprite, &id) else {
                     return Err(fail(format!("absent sprite/{id}")));
                 };
+                if sprite.pixel.is_some() {
+                    return Err(fail(
+                        "pixel sprites use generated poses; slice applies to PNG sheets",
+                    ));
+                }
                 sprite.frames = FrameGrid {
                     at,
                     cell,
@@ -734,7 +870,12 @@ impl Edit {
                 let Some(Resource::Sprite(source)) = project.get(Kind::Sprite, &sprite) else {
                     return Err(fail(format!("absent sprite/{sprite}")));
                 };
-                let frame_count = source.frame_count();
+                let frame_count = if let Some(id) = &source.pixel {
+                    let art = crate::pixel::Renderer::new(project).render(id)?;
+                    source.pixel_poses(&art)?.len()
+                } else {
+                    source.frame_count()
+                };
                 map_mut(project, &map)?.set_atlas_palette(
                     &sprite,
                     frame_count,
@@ -922,6 +1063,22 @@ fn rename(project: &mut Project, kind: Kind, id: &str, to: &str) -> Result<()> {
             Resource::Tilemap(map) if kind == Kind::Sprite => {
                 if let Some(atlas) = &mut map.atlas {
                     replace(atlas);
+                }
+            }
+            Resource::Sprite(sprite) if kind == Kind::Pixel => {
+                if let Some(source) = &mut sprite.pixel {
+                    replace(source);
+                }
+            }
+            Resource::Pixel(source) if matches!(kind, Kind::Palette | Kind::Pixel) => {
+                let spans = crate::pixel::source::parse(source)?
+                    .references
+                    .into_iter()
+                    .filter(|reference| reference.kind == kind && reference.id == id)
+                    .map(|reference| reference.span)
+                    .collect::<Vec<_>>();
+                for span in spans.into_iter().rev() {
+                    source.replace_range(span, to);
                 }
             }
             Resource::Script(source) => {

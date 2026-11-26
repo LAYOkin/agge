@@ -722,9 +722,8 @@ step:
         ],
     )
     .unwrap();
-    let media = Media {
-        sprites: std::collections::BTreeMap::from([("atlas".into(), atlas.into())]),
-    };
+    let mut media = Media::default();
+    media.sprites.insert("atlas".into(), atlas.into());
     let png = capture(&world, &media, [4, 4, 12, 4]).unwrap();
     let pixels = image::load_from_memory(&png).unwrap().into_rgba8();
     assert_eq!(pixels.get_pixel(0, 0).0, [200, 0, 0, 255]);

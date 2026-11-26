@@ -1,10 +1,13 @@
 use crate::{
     Bounds, World,
     asset::{audio_info, png_decoder},
+    pixel_sheet,
 };
 use agge_core::{
-    Animation, Color, Instance, Kind, Light, Object, Project, Resource, Result, Room, Shape, Tile,
-    Tilemap, fail, read_asset,
+    Animation, Color, Index, Instance, Kind, Light, Object, Project, Resource, Result, Room, Shape,
+    Sprite, Tile, Tilemap, fail,
+    pixel::{Art, Renderer},
+    read_asset,
 };
 use image::{ImageEncoder, RgbaImage, codecs::png::PngEncoder};
 use std::{
@@ -25,14 +28,57 @@ pub enum Draw<'a> {
 #[derive(Default)]
 pub struct Media {
     pub sprites: BTreeMap<String, Arc<RgbaImage>>,
+    pixel_frames: BTreeMap<String, FrameRects>,
 }
+
+type FrameRects = Arc<[[u32; 4]]>;
+type PixelSheet = (Arc<RgbaImage>, FrameRects);
+
 impl Media {
     pub fn load(project: &Project, root: &Path) -> Result<Self> {
+        Self::load_internal(project, root, None)
+    }
+
+    pub fn load_indexed(project: &Project, root: &Path, index: &Index) -> Result<Self> {
+        Self::load_internal(project, root, Some(index))
+    }
+
+    fn load_internal(project: &Project, root: &Path, index: Option<&Index>) -> Result<Self> {
         let mut media = Self::default();
         let mut sheets = BTreeMap::<&str, Arc<RgbaImage>>::new();
+        let mut pixel_sheets = BTreeMap::<(&str, &[String]), PixelSheet>::new();
+        let mut renderer = Renderer::new(project);
+        let mut generated_pixels = 0usize;
         let mut checked_audio = BTreeSet::new();
         for ((kind, id), resource) in &project.resources {
             if let Resource::Sprite(sprite) = resource {
+                if let Some(source) = &sprite.pixel {
+                    let key = (source.as_str(), sprite.poses.as_slice());
+                    let (image, rects) = match pixel_sheets.entry(key) {
+                        std::collections::btree_map::Entry::Occupied(entry) => entry.get().clone(),
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            let art = match index.and_then(|index| index.pixels.get(source)) {
+                                Some(art) => art.clone(),
+                                None => renderer.render(source)?,
+                            };
+                            let poses = sprite.pixel_poses(&art)?;
+                            let columns = agge_core::pixel::sheet_columns(poses.len());
+                            generated_pixels +=
+                                art.size[0] * art.size[1] * columns * poses.len().div_ceil(columns);
+                            if generated_pixels > agge_core::pixel::MAX_GENERATED_PIXELS {
+                                return Err(fail(
+                                    "generated sprite sheets exceed 16 million pixels",
+                                ));
+                            }
+                            entry
+                                .insert(make_pixel_sheet(&art, &poses, columns)?)
+                                .clone()
+                        }
+                    };
+                    media.sprites.insert(id.clone(), image);
+                    media.pixel_frames.insert(id.clone(), rects);
+                    continue;
+                }
                 let image = match sheets.entry(&sprite.file) {
                     std::collections::btree_map::Entry::Occupied(entry) => Arc::clone(entry.get()),
                     std::collections::btree_map::Entry::Vacant(entry) => {
@@ -65,6 +111,16 @@ impl Media {
     pub fn load_sprite(&mut self, root: &Path, id: &str, file: &str) -> Result<()> {
         self.sprites
             .insert(id.into(), Arc::new(decode_sprite(root, id, file)?));
+        self.pixel_frames.remove(id);
+        Ok(())
+    }
+
+    pub fn load_pixel_sprite(&mut self, id: &str, sprite: &Sprite, art: &Art) -> Result<()> {
+        let poses = sprite.pixel_poses(art)?;
+        let (image, rects) =
+            make_pixel_sheet(art, &poses, agge_core::pixel::sheet_columns(poses.len()))?;
+        self.sprites.insert(id.into(), image);
+        self.pixel_frames.insert(id.into(), rects);
         Ok(())
     }
 
@@ -78,13 +134,24 @@ impl Media {
         let Resource::Sprite(data) = project.get(Kind::Sprite, sprite)? else {
             return None;
         };
-        let region = if data.frames.is_empty() && frame == 0 {
+        let region = if data.pixel.is_some() {
+            *self.pixel_frames.get(sprite)?.get(frame)?
+        } else if data.frames.is_empty() && frame == 0 {
             [0, 0, image.width(), image.height()]
         } else {
             *data.frames.get(frame)?
         };
         within_image(region, image).then_some((region, image))
     }
+}
+
+fn make_pixel_sheet(art: &Art, poses: &[&str], columns: usize) -> Result<PixelSheet> {
+    let image = pixel_sheet(art, poses, None, None, 1, columns, 2048)?;
+    let [w, h] = art.size.map(|n| n as u32);
+    let rects = (0..poses.len())
+        .map(|i| [(i % columns) as u32 * w, (i / columns) as u32 * h, w, h])
+        .collect::<Vec<_>>();
+    Ok((Arc::new(image), rects.into()))
 }
 
 fn decode_sprite(root: &Path, id: &str, file: &str) -> Result<RgbaImage> {

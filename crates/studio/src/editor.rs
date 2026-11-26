@@ -272,7 +272,8 @@ impl Workbench {
     fn open(store: Store) -> Result<Self> {
         let loaded = store.load()?;
         let index = Index::build(&loaded.project);
-        let (media, status, bad) = match Media::load(&loaded.project, store.root()) {
+        let (media, status, bad) = match Media::load_indexed(&loaded.project, store.root(), &index)
+        {
             Ok(media) => (media, "Ready".into(), false),
             Err(error) => (Media::default(), error.to_string(), true),
         };
@@ -399,6 +400,14 @@ impl Workbench {
                         .and_then(|line| line.parse().ok())
                 });
         }
+        if kind == Kind::Pixel
+            && let Some(line) = location
+                .strip_prefix("line/")
+                .and_then(|line| line.parse().ok())
+        {
+            self.jump_line = Some(line);
+            self.raw = true;
+        }
         if kind == Kind::Room
             && let Some(placement) = tail.unwrap_or(location).strip_prefix("instances/")
         {
@@ -414,10 +423,11 @@ impl Workbench {
         self.index = Index::build(&self.loaded.project);
         self.canvas = Canvas::default();
         self.tool.refresh_media();
-        self.media = Media::load(&self.loaded.project, self.store.root()).unwrap_or_else(|error| {
-            self.note(error.to_string(), true);
-            Media::default()
-        });
+        self.media = Media::load_indexed(&self.loaded.project, self.store.root(), &self.index)
+            .unwrap_or_else(|error| {
+                self.note(error.to_string(), true);
+                Media::default()
+            });
         self.audio = AudioOutput::default();
         let key = self.draft.take().map(|d| (d.kind, d.id));
         if let Some((kind, id)) = key
@@ -568,6 +578,7 @@ impl Workbench {
         if let Some(message) = self.asset_id_error(kind, &id) {
             return Err(fail(message));
         }
+        let pixel_source;
         let default = match kind {
             Kind::Room | Kind::Object => "{}",
             Kind::Script => "step:\n  # Add behavior here",
@@ -579,6 +590,23 @@ impl Workbench {
             Kind::Audio => r#"{"file":"audio/sound.wav"}"#,
             Kind::Particle => {
                 r#"{"count":16,"life":30,"speed":90,"radius":2,"color":[140,230,190,255]}"#
+            }
+            Kind::Palette => {
+                r#"{"swatches":{"k":"202837","t":"498b91","T":"a6d7c8"},"ramps":["ktT"],"ink":"k"}"#
+            }
+            Kind::Pixel => {
+                let style = self
+                    .loaded
+                    .project
+                    .resources
+                    .keys()
+                    .find(|(kind, _)| *kind == Kind::Palette)
+                    .map(|(_, id)| id)
+                    .ok_or_else(|| {
+                        fail("Create and apply a Palette before creating pixel artwork")
+                    })?;
+                pixel_source = format!("canvas 24 24\nstyle {style}\nlayer paint");
+                &pixel_source
             }
         };
         let resource = Resource::parse(kind, default)?;
@@ -763,6 +791,8 @@ impl Workbench {
                     Kind::Script => "Scripts",
                     Kind::Audio => "Audio",
                     Kind::Particle => "Particles",
+                    Kind::Palette => "Palettes",
+                    Kind::Pixel => "Pixel artwork",
                 };
                 egui::CollapsingHeader::new(RichText::new(label).strong())
                     .id_salt((kind.name(), searching))
@@ -1189,7 +1219,13 @@ impl Workbench {
                                 });
                             }
                         } else if let Ok(resource) = &mut resource {
-                            panels::properties(ui, resource, &self.loaded.project, &mut self.tool);
+                            panels::properties(
+                                ui,
+                                resource,
+                                &self.loaded.project,
+                                &self.index,
+                                &mut self.tool,
+                            );
                         }
                         let key = format!("{}/{}", entry.kind, entry.id);
                         let belongs = |id: &str| {

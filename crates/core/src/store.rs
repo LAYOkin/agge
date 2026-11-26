@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const PROJECT_LIMIT: usize = 2 * 1024 * 1024;
+pub const PROJECT_LIMIT: usize = 2 * 1024 * 1024;
 const HISTORY_LIMIT: usize = 12;
 
 #[derive(Clone, Debug)]

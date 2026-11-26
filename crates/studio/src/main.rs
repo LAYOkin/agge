@@ -15,8 +15,11 @@ fn main() -> std::process::ExitCode {
     std::process::ExitCode::SUCCESS
 }
 fn run(file: Option<PathBuf>) -> Result<()> {
-    let mut options = agge_studio::options([1360., 850.]);
-    options.viewport = options.viewport.with_min_inner_size([840., 565.]);
+    let mut options = agge_studio::options([1280., 680.]);
+    options.viewport = options
+        .viewport
+        .with_min_inner_size([840., 565.])
+        .with_clamp_size_to_monitor_size(true);
     eframe::run_native(
         "AGGE Studio",
         options,

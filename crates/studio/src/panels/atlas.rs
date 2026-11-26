@@ -1,10 +1,47 @@
 use super::{Tools, asset_preview, choose, color, coordinates, field, fit, text};
 use crate::editor::{MINT, MUTED, Workbench};
-use agge_core::{Kind, Project, Resource, Sprite, Tile, Tilemap};
+use agge_core::{Index, Kind, Project, Resource, Sprite, Tile, Tilemap};
 use agge_runtime::Media;
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, RichText, Stroke, StrokeKind, Ui, Vec2};
 
-pub(super) fn sprite_properties(ui: &mut Ui, sprite: &mut Sprite, tools: &mut Tools) {
+pub(super) fn sprite_properties(
+    ui: &mut Ui,
+    sprite: &mut Sprite,
+    project: &Project,
+    tools: &mut Tools,
+) {
+    ui.horizontal(|ui| {
+        if ui.selectable_label(sprite.pixel.is_none(), "PNG").clicked() && sprite.pixel.is_some() {
+            sprite.pixel = None;
+            sprite.poses.clear();
+        }
+        if ui
+            .selectable_label(sprite.pixel.is_some(), "Pixel artwork")
+            .clicked()
+            && sprite.pixel.is_none()
+        {
+            sprite.pixel = Some(String::new());
+            sprite.file.clear();
+            sprite.frames.clear();
+        }
+    });
+    if let Some(pixel) = &mut sprite.pixel {
+        choose(
+            ui,
+            "Pixel artwork",
+            Kind::Pixel,
+            project,
+            pixel,
+            "Choose artwork",
+        );
+        if !sprite.poses.is_empty() {
+            ui.label(format!("Poses: {}", sprite.poses.join(", ")));
+            if ui.button("Use every pose").clicked() {
+                sprite.poses.clear();
+            }
+        }
+        return;
+    }
     text(ui, "PNG file", &mut sprite.file);
     ui.collapsing("Slice grid", |ui| {
         coordinates(ui, "Origin", &mut tools.frame_grid.at);
@@ -68,6 +105,10 @@ pub(super) fn sprite_properties(ui: &mut Ui, sprite: &mut Sprite, tools: &mut To
 }
 
 pub(super) fn sprite_canvas(ui: &mut Ui, work: &mut Workbench, id: &str, sprite: &Sprite) {
+    if let Some(source) = &sprite.pixel {
+        pixel_sprite_canvas(ui, work, id, sprite, source);
+        return;
+    }
     if work.tool.media_key.as_deref() != Some(sprite.file.as_str()) {
         work.tool.media_key = Some(sprite.file.clone());
         work.tool.media = Media::default();
@@ -173,10 +214,81 @@ pub(super) fn sprite_canvas(ui: &mut Ui, work: &mut Workbench, id: &str, sprite:
     }
 }
 
+fn pixel_sprite_canvas(ui: &mut Ui, work: &mut Workbench, id: &str, sprite: &Sprite, source: &str) {
+    let Some(art) = work.index.pixels.get(source) else {
+        ui.label("Choose saved pixel artwork to preview its poses.");
+        return;
+    };
+    let poses = match sprite.pixel_poses(art) {
+        Ok(poses) => poses,
+        Err(error) => {
+            ui.colored_label(Color32::LIGHT_RED, error.to_string());
+            return;
+        }
+    };
+    let key = format!("pixel/{source}:{:?}", sprite.poses);
+    if work.tool.media_key.as_deref() != Some(&key) {
+        work.tool.media_key = Some(key);
+        work.tool.media = Media::default();
+        work.tool.media_error = work
+            .tool
+            .media
+            .load_pixel_sprite(id, sprite, art)
+            .err()
+            .map(|e| e.to_string());
+        work.canvas = agge_studio::Canvas::default();
+    }
+    if let Some(error) = &work.tool.media_error {
+        ui.colored_label(Color32::LIGHT_RED, error);
+        return;
+    }
+    work.tool.frame = work.tool.frame.min(poses.len() - 1);
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut work.tool.sheet, true, "Sheet");
+        ui.selectable_value(&mut work.tool.sheet, false, "Pose");
+        if !work.tool.sheet {
+            ui.add(egui::Slider::new(&mut work.tool.frame, 0..=poses.len() - 1));
+            ui.monospace(poses[work.tool.frame]);
+        }
+    });
+    let available = ui.available_rect_before_wrap().shrink(18.);
+    let painter = ui.painter_at(available);
+    if work.tool.sheet {
+        if let Some(image) = work.tool.media.sprites.get(id) {
+            work.canvas.sheet(
+                &painter,
+                fit(available, [image.width(), image.height()]),
+                &work.tool.media,
+                id,
+            );
+        }
+    } else {
+        let mut project = Project::default();
+        project.put(id.into(), Resource::Sprite(sprite.clone()));
+        let [w, h] = art.size.map(|n| n as u32);
+        let rect = fit(available, [w, h]);
+        work.canvas.paint(
+            ui.ctx(),
+            &painter,
+            rect.min,
+            rect.width() / w as f32,
+            &work.tool.media,
+            &project,
+            agge_runtime::Draw::Sprite(
+                agge_runtime::Bounds::new(0., 0., w as f32, h as f32),
+                id,
+                work.tool.frame,
+                agge_core::WHITE,
+            ),
+        );
+    }
+}
+
 pub(super) fn tile_properties(
     ui: &mut Ui,
     map: &mut Tilemap,
     project: &Project,
+    index: &Index,
     tools: &mut Tools,
 ) {
     let mut atlas = map.atlas.clone().unwrap_or_default();
@@ -193,12 +305,7 @@ pub(super) fn tile_properties(
     });
     let cleared = map.atlas.is_some() && atlas.is_empty();
     map.atlas = (!atlas.is_empty()).then_some(atlas.clone());
-    let frame_count = project
-        .get(Kind::Sprite, &atlas)
-        .and_then(|resource| match resource {
-            Resource::Sprite(sprite) => Some(sprite.frame_count()),
-            _ => None,
-        });
+    let frame_count = index.sprite_frame_count(project, &atlas);
     if let Some(frames) = frame_count {
         ui.collapsing("Map sprite frames", |ui| {
             text(ui, "Tile keys in frame order", &mut tools.atlas_keys);

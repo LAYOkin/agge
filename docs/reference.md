@@ -1,8 +1,10 @@
 # Project and scripting reference
 
+Native artwork uses `palette` resources and `pixel` source blocks. A sprite can reference a PNG sheet or a pixel source. See the [pixel-art reference](pixel-art.md) for the format and drawing commands.
+
 ## Project format
 
-An `agge/1` file is UTF-8 text. The first line contains the format version and a JSON object with settings. Each resource has a kind and lowercase ID. JSON resources occupy one line. Script resources occupy a block terminated by a line containing only three hyphens.
+An `agge/1` file is UTF-8 text. The first line contains the format version and a JSON object with settings. Each resource has a kind and lowercase ID. JSON resources occupy one line. Script and pixel resources occupy a block terminated by a line containing only three hyphens.
 
 ```text
 agge/1 {"title":"Demo","start":"main","size":[320,180],"hz":60,"seed":1}
@@ -22,11 +24,13 @@ In Studio, open **Project → Keyboard bindings**, enter an action ID, and choos
 | --- | --- |
 | `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `maps`, `lights`, `darkness`, `ui` labels, `meters`, optional `music`, and `y_sort` |
 | `object` | `size`, RGBA `color`, `shape`, `sprite` or `animation`, `script`, `solid`, `one_way`, `hidden`, `gravity`, `depth`, collision `layer` and `mask` |
-| `sprite` | Project-relative PNG `file` and optional frame rectangles `[x,y,width,height]`; an empty frame list means the entire image |
+| `sprite` | Project-relative PNG `file` with optional frame rectangles, or a `pixel` resource ID with optional named `poses` |
 | `animation` | Sprite ID, zero-based `frames`, `fps`, and optional `mode` (`loop`, `once`, or `ping_pong`) |
 | `tilemap` | Pixel `cell` size, optional pixel offset `at`, optional `atlas` sprite, palette `tiles`, and equal-width ASCII `rows`. A dot marks an empty tile |
 | `audio` | Project-relative WAV or OGG Vorbis `file` and optional `gain` |
 | `particle` | Burst `count`, `life` in ticks, pixel `speed` per second, `radius`, RGBA `color`, and optional `gravity` |
+| `palette` | Indexed `swatches`, optional light direction, shading ramps, and outline ink |
+| `pixel` | Canvas, palette style, layered drawing commands, and named poses |
 
 A label has pixel coordinates `at`, `text`, and optional `size`, `color`, and `value`. `value` names a global number appended to the label. Coordinates start at the top left. Positive Y points down. An object's position and collider use its top-left corner, even for round visuals.
 

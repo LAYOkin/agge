@@ -18,10 +18,12 @@ pub enum Kind {
     Script,
     Audio,
     Particle,
+    Palette,
+    Pixel,
 }
 
 impl Kind {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Room,
         Self::Object,
         Self::Sprite,
@@ -30,6 +32,8 @@ impl Kind {
         Self::Script,
         Self::Audio,
         Self::Particle,
+        Self::Palette,
+        Self::Pixel,
     ];
     pub fn name(self) -> &'static str {
         match self {
@@ -41,7 +45,13 @@ impl Kind {
             Self::Script => "script",
             Self::Audio => "audio",
             Self::Particle => "particle",
+            Self::Palette => "palette",
+            Self::Pixel => "pixel",
         }
+    }
+
+    pub fn is_source(self) -> bool {
+        matches!(self, Self::Script | Self::Pixel)
     }
 }
 impl fmt::Display for Kind {
@@ -331,7 +341,12 @@ fn default_mask(value: &u16) -> bool {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Sprite {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pixel: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub poses: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub frames: Vec<[u32; 4]>,
 }
@@ -339,6 +354,24 @@ pub struct Sprite {
 impl Sprite {
     pub fn frame_count(&self) -> usize {
         self.frames.len().max(1)
+    }
+
+    pub fn pixel_poses<'a>(&'a self, art: &'a crate::pixel::Art) -> Result<Vec<&'a str>> {
+        if self.poses.is_empty() {
+            return Ok(art.frame_names().collect());
+        }
+        if self.poses.len() > crate::pixel::MAX_FRAMES {
+            return Err(fail("sprite may select up to 64 poses"));
+        }
+        self.poses
+            .iter()
+            .map(|name| {
+                if !art.has_frame(name) {
+                    return Err(fail(format!("absent pixel frame {name:?}")));
+                }
+                Ok(name.as_str())
+            })
+            .collect()
     }
 }
 
@@ -728,6 +761,8 @@ pub enum Resource {
     Script(String),
     Audio(Audio),
     Particle(Particle),
+    Palette(crate::pixel::Profile),
+    Pixel(String),
 }
 impl Resource {
     pub fn kind(&self) -> Kind {
@@ -740,6 +775,8 @@ impl Resource {
             Self::Script(_) => Kind::Script,
             Self::Audio(_) => Kind::Audio,
             Self::Particle(_) => Kind::Particle,
+            Self::Palette(_) => Kind::Palette,
+            Self::Pixel(_) => Kind::Pixel,
         }
     }
     pub fn parse(kind: Kind, value: &str) -> Result<Self> {
@@ -757,6 +794,13 @@ impl Resource {
             ),
             Kind::Audio => Self::Audio(serde_json::from_str(value)?),
             Kind::Particle => Self::Particle(serde_json::from_str(value)?),
+            Kind::Palette => Self::Palette(serde_json::from_str(value)?),
+            Kind::Pixel => Self::Pixel(
+                value
+                    .replace("\r\n", "\n")
+                    .trim_end_matches('\n')
+                    .to_owned(),
+            ),
         })
     }
     pub fn encode(&self, pretty: bool) -> String {
@@ -774,9 +818,10 @@ impl Resource {
             Self::Sprite(x) => encode(x, pretty),
             Self::Animation(x) => encode(x, pretty),
             Self::Tilemap(x) => encode(x, pretty),
-            Self::Script(x) => x.clone(),
+            Self::Script(x) | Self::Pixel(x) => x.clone(),
             Self::Audio(x) => encode(x, pretty),
             Self::Particle(x) => encode(x, pretty),
+            Self::Palette(x) => encode(x, pretty),
         }
     }
 }
@@ -832,12 +877,12 @@ impl Project {
                 .split_once(' ')
                 .ok_or_else(|| fail(format!("line {}: expected resource", line + 1)))?;
             let kind = Kind::from_str(kind)?;
-            let (id, resource) = if kind == Kind::Script {
+            let (id, resource) = if kind.is_source() {
                 let mut source = Vec::new();
                 loop {
                     let (_, code) = lines
                         .next()
-                        .ok_or_else(|| fail(format!("line {}: unterminated script", line + 1)))?;
+                        .ok_or_else(|| fail(format!("line {}: unterminated {kind}", line + 1)))?;
                     if code == "---" {
                         break;
                     }
@@ -871,7 +916,7 @@ impl Project {
         self.resources
             .values()
             .filter_map(|resource| match resource {
-                Resource::Sprite(sprite) => Some(sprite.file.as_str()),
+                Resource::Sprite(sprite) if !sprite.file.is_empty() => Some(sprite.file.as_str()),
                 Resource::Audio(audio) => Some(audio.file.as_str()),
                 _ => None,
             })
@@ -886,7 +931,7 @@ impl Project {
         );
         for ((kind, id), resource) in &self.resources {
             let value = resource.encode(false);
-            if *kind == Kind::Script {
+            if kind.is_source() {
                 writeln!(out, "{kind} {id}\n{value}\n---").expect("string write");
             } else {
                 writeln!(out, "{kind} {id} {value}").expect("string write");

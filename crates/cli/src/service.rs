@@ -1,10 +1,11 @@
 use agge_core::{
     Edit, Index, Kind, Resource, Result, fail,
     script::{self, Event},
-    store::{Loaded, Store},
+    store::{Loaded, PROJECT_LIMIT, Store},
 };
 use agge_runtime::{
-    CompiledGame, Media, Replay, ReplaySuite, Report, asset_info, capture, replay, replay_compiled,
+    CompiledGame, Media, Replay, ReplaySuite, Report, asset_info, capture, encode_png, pixel_sheet,
+    replay, replay_compiled,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,7 +26,7 @@ pub fn check(store: &Store) -> Result<(Value, bool)> {
     let index = Index::build(&loaded.project);
     let mut diagnostics = json!(index.diagnostics);
     if index.diagnostics.is_empty()
-        && let Err(error) = Media::load(&loaded.project, store.root())
+        && let Err(error) = Media::load_indexed(&loaded.project, store.root(), &index)
     {
         diagnostics = json!([{"code":"asset","message":error.to_string()}]);
     }
@@ -40,6 +41,9 @@ pub fn check(store: &Store) -> Result<(Value, bool)> {
 #[serde(deny_unknown_fields)]
 struct Query {
     get: Option<String>,
+    pixel: Option<String>,
+    frame: Option<String>,
+    layer: Option<String>,
     base: Option<String>,
     asset: Option<String>,
     schema: Option<String>,
@@ -152,6 +156,7 @@ impl Query {
         let args = self;
         let modes = [
             &args.get,
+            &args.pixel,
             &args.asset,
             &args.refs,
             &args.outline,
@@ -164,11 +169,12 @@ impl Query {
             + usize::from(args.lines.is_some())
             + usize::from(args.event.is_some())
             + usize::from(args.function.is_some())
-            + usize::from(args.area.is_some());
+            + usize::from(args.area.is_some() && args.pixel.is_none());
         if modes.into_iter().filter(|option| option.is_some()).count() > 1
             || selectors > 1
             || selectors != 0 && args.get.is_none()
             || args.symbol.is_some() && args.outline.is_none()
+            || (args.frame.is_some() || args.layer.is_some()) && args.pixel.is_none()
             || args.object.is_some() && args.placements.is_none()
             || args.base.is_some()
                 && (args.schema.is_some() || args.asset.is_some() || args.session.is_some())
@@ -191,6 +197,41 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
         ));
     }
     let mut result = json!({});
+    if let Some(id) = args.pixel {
+        let index = index.get_or_init(|| Index::build(&loaded.project));
+        let art = art_at(index, &id)?;
+        let frame = args.frame.as_deref();
+        if let Some(area @ [_, _, w, h]) = args.area {
+            if w.saturating_mul(h) > 4096 {
+                return Err(fail("area exceeds 4096 pixels"));
+            }
+            let pixels = art.pixels(frame, args.layer.as_deref(), Some(area))?;
+            let rows = pixels
+                .chunks_exact(w)
+                .map(|row| {
+                    row.iter()
+                        .map(|&key| if key == 0 { '.' } else { char::from(key) })
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>();
+            let mut result = json!({"id":format!("pixel/{id}"),"area":area,"data":rows});
+            if let Some(layer) = args.layer {
+                result["layer"] = json!(layer);
+            }
+            if let Some(frame) = frame {
+                result["frame"] = json!(frame);
+            }
+            return Ok(result);
+        }
+        if args.layer.is_some() {
+            return Err(fail("layer requires a pixel area"));
+        }
+        return Ok(json!({
+            "id":format!("pixel/{id}"), "size":art.size, "style":art.style,
+            "frames":art.frame_names().collect::<Vec<_>>(),
+            "layers":art.layers(frame)?.collect::<Vec<_>>()
+        }));
+    }
     if let Some(id) = args.placements {
         let Some(Resource::Room(room)) = loaded.project.get(Kind::Room, &id) else {
             return Err(fail(format!("absent room/{id}")));
@@ -291,7 +332,7 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
                 .project
                 .get(kind, id)
                 .ok_or_else(|| fail(format!("absent {key}")))?;
-            if kind == Kind::Script {
+            if kind.is_source() {
                 json!(resource.encode(false))
             } else {
                 serde_json::from_str(&resource.encode(false))?
@@ -309,7 +350,7 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
             }
             let source = result["data"]
                 .as_str()
-                .ok_or_else(|| fail("lines requires a script"))?;
+                .ok_or_else(|| fail("lines requires a source resource"))?;
             result["data"] = json!(
                 source
                     .lines()
@@ -342,6 +383,94 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
         page(&mut result, ids, args.offset, args.limit);
     }
     Ok(result)
+}
+
+fn art_at<'a>(index: &'a Index, id: &str) -> Result<&'a agge_core::pixel::Art> {
+    if let Some(art) = index.pixels.get(id) {
+        return Ok(art);
+    }
+    let key = format!("pixel/{id}");
+    let detail = index.diagnostics.iter().find(|d| {
+        d.at == key
+            || d.at
+                .strip_prefix(&key)
+                .is_some_and(|suffix| suffix.starts_with('/'))
+    });
+    Err(match detail {
+        Some(d) => fail(format!("{}: {}", d.at, d.message)),
+        None => fail(format!("absent {key}")),
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ArtFrames {
+    Name(String),
+    List(Vec<String>),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArtRequest {
+    pixel: String,
+    base: Option<String>,
+    frames: Option<ArtFrames>,
+    layer: Option<String>,
+    area: Option<[usize; 4]>,
+    scale: Option<usize>,
+    columns: Option<usize>,
+    #[serde(default)]
+    ops: Vec<Edit>,
+}
+
+pub fn art(store: &Store, args: Value, cache: &mut QueryCache) -> Result<Simulation> {
+    let request: ArtRequest = serde_json::from_value(args)?;
+    if request.ops.len() > 16 {
+        return Err(fail("art preview accepts up to 16 edits"));
+    }
+    let (loaded, memo) = cache.snapshot(store)?;
+    require_revision(loaded, request.base.as_deref())?;
+    let preview = !request.ops.is_empty();
+    let candidate;
+    let index = if preview {
+        let mut project = loaded.project.clone();
+        for (i, op) in request.ops.into_iter().enumerate() {
+            op.apply(&mut project)
+                .map_err(|e| fail(format!("op {}: {e}", i + 1)))?;
+        }
+        if project.encode().len() > PROJECT_LIMIT {
+            return Err(fail("project exceeds 2 MiB"));
+        }
+        candidate = Index::build(&project);
+        candidate.require_valid()?;
+        &candidate
+    } else {
+        memo.get_or_init(|| Index::build(&loaded.project))
+    };
+    let art = art_at(index, &request.pixel)?;
+    let frames = match &request.frames {
+        Some(ArtFrames::Name(name)) if name == "*" => art.frame_names().collect(),
+        Some(ArtFrames::Name(name)) => vec![name.as_str()],
+        Some(ArtFrames::List(names)) => names.iter().map(String::as_str).collect(),
+        None => art.frame_names().take(1).collect(),
+    };
+    let area = art.area(request.area)?;
+    let columns = request.columns.unwrap_or_else(|| frames.len().clamp(1, 4));
+    let scale = request.scale.unwrap_or(1);
+    let png = pixel_sheet(
+        art,
+        &frames,
+        request.layer.as_deref(),
+        Some(area),
+        scale,
+        columns,
+        512,
+    )?;
+    let mut result = json!({"revision":loaded.revision,"pixel":request.pixel,"frames":frames,"area":area,"size":[png.width(),png.height()]});
+    if preview {
+        result["preview"] = json!(true);
+    }
+    Ok((result, true, Some(encode_png(&png)?)))
 }
 
 fn script_source<'a>(project: &'a agge_core::Project, key: &str) -> Result<&'a str> {
@@ -628,6 +757,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"remove","kind":"object","id":"player"},
             {"op":"rename","kind":"object","id":"player","to":"pilot"},
             {"op":"rename_global","id":"score","to":"points"},
+            {"op":"pixel_patch","id":"scout","frame":"idle","layer":"face","draw":"rows 7 5 L.K"},
             {"op":"settings","fields":{"hz":60}},
             {"op":"script_event","id":"drive","event":"step","body":"  move 120 * dt, 0"},
             {"op":"splice","id":"drive","at":[3,1],"text":"  move 180 * dt, 0"},
@@ -650,6 +780,18 @@ fn guide(key: &str) -> Result<Value> {
             json!({"size":[24,24],"color":[255,255,255,255],"shape":"rect","sprite":"ship","script":"drive","solid":false,"one_way":false,"hidden":false,"gravity":0,"depth":0})
         }
         "sprite" => json!({"file":"art/ship.png","frames":[[0,0,16,16]]}),
+        "sprite/pixel" => json!({"pixel":"scout","poses":["idle","blink"]}),
+        "palette" => {
+            json!({"swatches":{"k":"172135","t":"417982","T":"90cbd0"},"ramps":["ktT"],"ink":"k","light":[-1,-1]})
+        }
+        "pixel" => json!({
+            "source":"canvas 16 16\nstyle coast\nlayer body\n  oval t 3 3 10 11\n  shade 0 0 16 16\n  outline 0 0 16 16\nframe idle\nframe blink idle\nlayer eyes\n  rows 6 7 k.k\ntween bob idle 4 0 -2",
+            "header":["canvas w h","style palette","base pixel","layer name","frame name [from]","tween prefix from count dx dy [layer]","motion prefix from layer=dx,dy/dx,dy/... [layer=...]"],
+            "draw":["px c x y","line c x y x2 y2","box|rect|oval c x y w h","poly c x,y ...","rows x y 3a.b/a3b","dither a b x y w h","flood c x y","clear x y w h","recolor a b x y w h","copy x y w h dx dy [transform]","mirror x|y x y w h","use pixel[:pose] x y [transform]","shift dx dy","shade x y w h","outline|outline8 x y w h [ink]"],
+            "transforms":["mx","my","r90","r180","r270"],
+            "inspect":{"pixel":"scout","frame":"idle","area":[6,5,6,4]},
+            "png":{"pixel":"scout","frames":"*","columns":4,"scale":2}
+        }),
         "animation" => json!({"sprite":"ship","frames":[0,1],"fps":10,"mode":"ping_pong"}),
         "script" => {
             json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\"[,dx,dy])","global(name)","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})

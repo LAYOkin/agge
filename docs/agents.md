@@ -25,8 +25,11 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 | `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,expect?,sample?,select?,crop?,base?}` |
 | `agge_history` | `agge undo` or `agge redo` | `{redo,base?}` |
 | `agge_knowledge` | `agge knowledge PROJECT JSON` | `{op,key?,value?}` |
+| `agge_art` | `agge art PROJECT JSON OUTPUT.png` | `{pixel,frames?,layer?,area?,scale?,columns?,base?,ops?}` |
 
 A CLI JSON argument can be inline, `@file.json`, or `-` for stdin. Exit codes are 0 for success, 1 for a failed validation or replay assertion, and 2 for a usage or operation error. MCP returns compact JSON in a text item and includes PNG data as a separate image item when requested.
+
+Query `{"schema":"pixel"}` for the drawing forms. Use `{"pixel":"scout","frame":"idle","area":[6,5,8,5]}` for exact glyph rows, or request a PNG of one region, layer, or several poses with `agge_art`. A PNG request can preview a few edits without writing history. See the [pixel-art workflow](pixel-art.md).
 
 Example queries include `{"prefix":"room/","limit":8}`, `{"refs":"object/pilot"}`, `{"get":"room/main","path":"/instances/0"}`, and `{"get":"script/drive","lines":[1,12]}`. Reference queries show both directions and the field or script line. List, outline, and reference queries accept `offset` and `limit` and return `next` when there are more results.
 

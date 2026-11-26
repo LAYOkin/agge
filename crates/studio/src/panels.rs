@@ -1,4 +1,5 @@
 mod atlas;
+mod pixel;
 mod room_camera;
 
 use crate::{
@@ -6,8 +7,8 @@ use crate::{
     viewport::{Camera, PRIMARY, stroke_cells},
 };
 use agge_core::{
-    AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Project, Resource, Room,
-    Shape, Tilemap, WHITE,
+    AnimationMode, Color, FrameGrid, Index, Instance, Kind, Label, Light, Meter, Project, Resource,
+    Room, Shape, Tilemap, WHITE,
 };
 use agge_runtime::{Bounds, Draw, Media, draw_hud, edit_scene, pick_placement, room_colliders};
 use agge_studio::{color, fit, paint_collider};
@@ -57,6 +58,7 @@ pub struct Tools {
     camera: Camera,
     stroke: Option<[usize; 2]>,
     map_texture: Option<(Tilemap, egui::TextureHandle)>,
+    art: pixel::Panel,
 }
 impl Default for Tools {
     fn default() -> Self {
@@ -89,6 +91,7 @@ impl Default for Tools {
             camera: Camera::default(),
             stroke: None,
             map_texture: None,
+            art: pixel::Panel::default(),
         }
     }
 }
@@ -101,6 +104,7 @@ impl Tools {
     pub fn refresh_media(&mut self) {
         self.media_key = None;
         self.map_texture = None;
+        self.art.invalidate();
     }
 
     pub fn reset(&mut self) {
@@ -155,7 +159,13 @@ fn link(ui: &mut Ui, label: &str, kind: Kind, project: &Project, value: &mut Opt
     });
 }
 
-pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools: &mut Tools) {
+pub fn properties(
+    ui: &mut Ui,
+    resource: &mut Resource,
+    project: &Project,
+    index: &Index,
+    tools: &mut Tools,
+) {
     match resource {
         Resource::Room(room) => {
             tint(ui, "Background", &mut room.bg);
@@ -371,7 +381,7 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
                 ui.small("Tiles use layer value 1. A mask of 0 ignores all blockers.");
             });
         }
-        Resource::Sprite(sprite) => atlas::sprite_properties(ui, sprite, tools),
+        Resource::Sprite(sprite) => atlas::sprite_properties(ui, sprite, project, tools),
         Resource::Animation(animation) => {
             choose(
                 ui,
@@ -410,7 +420,7 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
             {
                 ui.label(egui::RichText::new(error.to_string()).color(Color32::LIGHT_RED));
             }
-            atlas::tile_properties(ui, map, project, tools);
+            atlas::tile_properties(ui, map, project, index, tools);
         }
         Resource::Audio(audio) => {
             text(ui, "WAV / OGG file", &mut audio.file);
@@ -424,7 +434,8 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
             field(ui, "Gravity", &mut particle.gravity);
             tint(ui, "Color", &mut particle.color);
         }
-        Resource::Script(_) => (),
+        Resource::Palette(profile) => pixel::profile_properties(ui, profile),
+        Resource::Pixel(_) | Resource::Script(_) => (),
     }
 }
 
@@ -549,6 +560,10 @@ pub fn canvas(ui: &mut Ui, work: &mut Workbench, id: &str, resource: &mut Resour
                 }
             }
         }
+        Resource::Pixel(source) => {
+            pixel::canvas(ui, &work.loaded.project, id, source, &mut work.tool.art)
+        }
+        Resource::Palette(profile) => pixel::profile_canvas(ui, profile),
         Resource::Script(_) => (),
     }
 }

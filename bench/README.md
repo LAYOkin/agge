@@ -143,3 +143,21 @@ Quality checks cover 12 matching poses including the template, silhouette dimens
 ```sh
 python bench/pixel_art.py --agge target/release/agge --output pixel-results.json
 ```
+
+## Compact development workflows
+
+The harness counts `o200k_base` tokens in exact request and reply JSON. It uses release binaries and verifies that both workflows return the same dependency distances, project bytes, sampled replay outcomes, or change rows. Times are the median of five runs on Windows with a Ryzen 5 5600H and include CLI process startup.
+
+| Task | Baseline tokens | Compact tokens | Baseline time | Compact time |
+| --- | ---: | ---: | ---: | ---: |
+| Find the 29 downstream resources of Brassline Foundry's main palette | 1,495 | 238 | 47.11 ms | 7.62 ms |
+| Move a group of 48 placements | 1,908 | 111 | 23.96 ms | 23.16 ms |
+| Find all changes in two fields over 128 observations | 1,093 | 112 | 11.16 ms | 9.95 ms |
+| Run three short branches after a shared 20,000-tick prefix | 252 | 306 | 58.05 ms | 44.51 ms |
+
+The baselines use batched reference reads, explicit placement edits, a sample grid, and three fresh replays, respectively. The checkpoint trades an extra request and 54 JSON tokens for less repeated simulation. These measurements exclude model prompts, tool schemas, image tokens, and agent reasoning. [Recorded results](release-results.json)
+
+```sh
+python -m pip install -r bench/requirements.txt
+python bench/release_workflows.py target/release/agge --runs 5
+```

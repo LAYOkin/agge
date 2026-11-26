@@ -21,3 +21,5 @@ The [architecture guide](docs/architecture.md) describes crate boundaries. Put f
 For token-efficiency work, capture both workflows and check that they produce equivalent results before comparing counts. Separate scripted transcripts from provider-reported session usage and include unsuccessful trials. For throughput changes, compare release builds on the same machine and record the fixture, number of repetitions, and timing scope. [Benchmark instructions](bench/README.md)
 
 Commit source projects, assets, and replay specs with examples. AGGE's lock, history, and knowledge files are machine-local sidecars. Consult [AGENTS.md](AGENTS.md) for the project editing workflow.
+
+After changing the player, export path, or distribution tooling, build the release binaries and run the portable packaging script. The [release status](docs/release.md) lists the native checks that complement the automated package verification.

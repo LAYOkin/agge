@@ -1,0 +1,52 @@
+name: Portable builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - .github/workflows/artifacts.yml
+      - tools/package_release.py
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            features: --features agge-studio/vulkan
+          - os: ubuntu-latest
+            name: linux
+            features: ''
+          - os: macos-latest
+            name: macos
+            features: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev
+      - run: rustup toolchain install stable
+      - run: cargo +stable build --release --workspace --locked ${{ matrix.features }}
+      - name: Stage and verify portable archive
+        env:
+          AGGE_PACKAGE_LABEL: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+        run: python tools/package_release.py --label "${AGGE_PACKAGE_LABEL}"
+        shell: bash
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agge-${{ matrix.name }}
+          path: target/dist/*
+          compression-level: 0
+          if-no-files-found: error

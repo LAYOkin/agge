@@ -1,0 +1,54 @@
+{
+  "encoding": "o200k_base",
+  "runs": 5,
+  "results": {
+    "palette_impact": {
+      "baseline": {
+        "requests": 6,
+        "tokens": 1495,
+        "median_ms": 47.11
+      },
+      "compact": {
+        "requests": 1,
+        "tokens": 238,
+        "median_ms": 7.62
+      }
+    },
+    "move_48_placements": {
+      "baseline": {
+        "requests": 2,
+        "tokens": 1908,
+        "median_ms": 23.96
+      },
+      "compact": {
+        "requests": 2,
+        "tokens": 111,
+        "median_ms": 23.16
+      }
+    },
+    "branch_three_replays": {
+      "baseline": {
+        "requests": 3,
+        "tokens": 252,
+        "median_ms": 58.05
+      },
+      "compact": {
+        "requests": 4,
+        "tokens": 306,
+        "median_ms": 44.51
+      }
+    },
+    "watch_128_ticks": {
+      "baseline": {
+        "requests": 1,
+        "tokens": 1093,
+        "median_ms": 11.16
+      },
+      "compact": {
+        "requests": 1,
+        "tokens": 112,
+        "median_ms": 9.95
+      }
+    }
+  }
+}

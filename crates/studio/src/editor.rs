@@ -460,8 +460,9 @@ impl Workbench {
             self.store.root().to_owned(),
             room,
         )?;
-        play.recording = Some(agge_runtime::ReplayRecorder::new(
-            room.unwrap_or(&self.loaded.project.settings.start),
+        play.recording = Some(agge_runtime::ReplayRecorder::for_project(
+            &self.loaded.project,
+            room,
         ));
         play.paused = self.play.as_ref().is_some_and(|current| current.paused);
         self.play = Some(play);

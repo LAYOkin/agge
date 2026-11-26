@@ -214,7 +214,7 @@ step:
 "#,
     )
     .unwrap();
-    let mut recorder = ReplayRecorder::new("test");
+    let mut recorder = ReplayRecorder::for_project(&project, None);
     for keys in [
         &["right"][..],
         &["right", "down"],
@@ -226,6 +226,8 @@ step:
         recorder.record(&input);
     }
     let mut spec = serde_json::to_value(recorder.replay()).unwrap();
+    assert_eq!(spec["room"], "test");
+    assert_eq!(spec["seed"], project.settings.seed);
     assert_eq!(
         spec["input"],
         serde_json::json!([[1, 2, "right"], [2, 3, "down"], [5, 5, "right"]])

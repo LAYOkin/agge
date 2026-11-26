@@ -61,7 +61,7 @@ agge test my_game/game.agge @movement.json
 
 That test uses the default rate of 60 ticks per second. It checks the same movement script the player runs.
 
-To capture a playtest in Studio, press **Play**, perform the sequence, and select **Copy replay** while the playtest is still open. You can pause before copying to hold the end tick. Paste the JSON into `movement.json` and add an `expect` array for the outcomes you want to preserve. The recording stores action spans and the starting room. It includes manual steps and stops recording at the replay size limits.
+To capture a playtest in Studio, press **Play**, perform the sequence, and select **Copy replay** while the playtest is still open. You can pause before copying to hold the end tick. Paste the JSON into `movement.json` and add an `expect` array for the outcomes you want to preserve. The recording stores action spans, the starting room, and the random seed used by the playtest. It includes manual steps and stops recording at the replay size limits.
 
 Choose **Restart** during a playtest to return to its starting room at tick 0 and begin a new recording. A paused playtest stays paused. Copy the current replay first if you want to keep it.
 

@@ -71,6 +71,13 @@ pub struct ReplayRecorder {
 }
 
 impl ReplayRecorder {
+    /// Record against the project's starting room and seed unless a room is selected.
+    pub fn for_project(project: &Project, room: Option<&str>) -> Self {
+        let mut recorder = Self::new(room.unwrap_or(&project.settings.start));
+        recorder.spec.seed = Some(project.settings.seed);
+        recorder
+    }
+
     pub fn new(room: &str) -> Self {
         Self {
             spec: Replay {

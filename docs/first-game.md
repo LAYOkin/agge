@@ -51,6 +51,8 @@ That test uses the default rate of 60 ticks per second. It checks the same movem
 
 To capture a playtest in Studio, press **Play**, perform the sequence, and select **Copy replay** while the playtest is still open. You can pause before copying to hold the end tick. Paste the JSON into `movement.json` and add an `expect` array for the outcomes you want to preserve. The recording stores action spans and the starting room. It includes manual steps and stops recording at the replay size limits.
 
+Choose **Restart** during a playtest to return to its starting room at tick 0 and begin a new recording. A paused playtest stays paused. Copy the current replay first if you want to keep it.
+
 For examples of collision gameplay, open `examples/switchback/game.agge` for grounded jumps and one-way platforms, or `examples/bankshot/game.agge` for a short arcade game built around `hit_x` and `hit_y`.
 
 Cinder Circuit demonstrates collision filters and scripted animations. Its `replay.json` defines four named scenarios in one suite, including a projectile crossing a force field that blocks the pilot.

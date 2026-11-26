@@ -371,6 +371,7 @@ impl Workbench {
         play.recording = Some(agge_runtime::ReplayRecorder::new(
             room.unwrap_or(&self.loaded.project.settings.start),
         ));
+        play.paused = self.play.as_ref().is_some_and(|current| current.paused);
         self.play = Some(play);
         self.play_canvas = Canvas::default();
         Ok(())
@@ -423,6 +424,12 @@ impl Workbench {
             if let Some(play) = &mut self.play {
                 if ui.button("■ Stop").clicked() {
                     self.play = None;
+                } else if ui
+                    .button("Restart")
+                    .on_hover_text("Restart from the starting room with a new replay recording.")
+                    .clicked()
+                {
+                    self.command(Self::play);
                 } else {
                     let fault = play.world.fault();
                     if let Some(fault) = fault {

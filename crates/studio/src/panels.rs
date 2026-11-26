@@ -3,7 +3,7 @@ mod room_camera;
 
 use crate::{
     editor::{MINT, MUTED, Workbench},
-    viewport::{Camera, PRIMARY, stroke_cells},
+    viewport::{Camera, PRIMARY, flood_cells, stroke_cells},
 };
 use agge_core::{
     AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Project, Resource, Room,
@@ -31,6 +31,7 @@ pub struct Tools {
     place: String,
     snap: u32,
     brush: char,
+    fill: bool,
     palette_key: String,
     frame: usize,
     sheet: bool,
@@ -56,6 +57,7 @@ impl Default for Tools {
             place: String::new(),
             snap: 8,
             brush: '#',
+            fill: false,
             palette_key: String::new(),
             frame: 0,
             sheet: true,
@@ -713,6 +715,9 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("{} × {} · brush {}", w, h, work.tool.brush)).color(MUTED))
             .on_hover_text("Right-click a tile to sample the brush.");
+        ui.selectable_value(&mut work.tool.fill, false, "Paint");
+        ui.selectable_value(&mut work.tool.fill, true, "Fill")
+            .on_hover_text("Replace connected cells that match the clicked tile.");
         work.tool.camera.toolbar(ui);
     });
     let view = work.tool.camera.show(ui, [w as u32, h as u32]);
@@ -734,7 +739,15 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
         || response.dragged_by(PRIMARY)
         || response.drag_stopped_by(PRIMARY);
     let brush = work.tool.brush;
-    if let Some(cell) = cell.filter(|_| active)
+    if work.tool.fill {
+        work.tool.stroke = None;
+        if response.clicked_by(PRIMARY)
+            && let Some(cell) = cell
+            && (brush == '.' || map.tiles.contains_key(&brush))
+        {
+            flood_cells(&mut map.rows, [w, h], cell, brush);
+        }
+    } else if let Some(cell) = cell.filter(|_| active)
         && (brush == '.' || map.tiles.contains_key(&brush))
     {
         let start = work

@@ -26,6 +26,8 @@ With the tilemap editor, set the grid dimensions and cell size, create or select
 
 Use the mouse wheel to zoom at the pointer and drag with the middle mouse button to pan in the room and tilemap canvases. **Fit** restores the full view. In the tilemap, right-click any tile to pick it up as the brush, or right-click an empty cell to select the eraser. Hold the primary button to paint a continuous stroke, then choose **Apply** to save it as one undoable change.
 
+Select **Fill** and click a cell to replace its connected region with the current brush. Fill reaches matching cells that share an edge. Switch back to **Paint** for individual tiles and strokes.
+
 For regularly spaced sprites, open **Slice grid**, set frame dimensions and the number of columns and rows, and generate the frames. Add an origin or spacing for sheets with margins or gutters. Select a rectangle on the full sheet to edit that frame or check it in **Frame preview**.
 
 To paint textured tiles, select the sheet under **Atlas** in the tilemap inspector. **Map sprite frames** assigns consecutive frames to the keys in the order you enter them. Supply the subset that should block movement under **Solid keys**. You can also select one palette key to change its frame, tint, or collision flag. Signal Runner's station uses a solid wall tile and a non-solid guide light from the same PNG.

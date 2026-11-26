@@ -505,6 +505,39 @@ pub struct Tilemap {
 }
 
 impl Tilemap {
+    /// Paint a rectangular area, optionally leaving its interior intact.
+    pub fn fill_area(&mut self, [x, y, w, h]: [usize; 4], tile: char, border: bool) -> Result<()> {
+        let rows = self.area_mut([x, y, w, h])?;
+        if !tile.is_ascii() {
+            return Err(fail("tile must be ASCII"));
+        }
+        for (index, row) in rows.iter_mut().enumerate() {
+            let replacement = if border && index != 0 && index + 1 != h && w > 2 {
+                format!("{tile}{}{tile}", &row[x + 1..x + w - 1])
+            } else {
+                tile.to_string().repeat(w)
+            };
+            row.replace_range(x..x + w, &replacement);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn area_mut(&mut self, [x, y, w, h]: [usize; 4]) -> Result<&mut [String]> {
+        let rows = self
+            .rows
+            .get_mut(y..y.saturating_add(h))
+            .ok_or_else(|| fail("area exceeds map height"))?;
+        if w == 0
+            || h == 0
+            || rows
+                .iter()
+                .any(|row| !row.is_ascii() || x.saturating_add(w) > row.len())
+        {
+            return Err(fail("empty area, non-ASCII map or area exceeds map width"));
+        }
+        Ok(rows)
+    }
+
     /// Replace the edge-connected region containing `at` with a palette tile or empty space.
     pub fn flood(&mut self, at: [usize; 2], tile: char) -> Result<()> {
         let [x, y] = at;

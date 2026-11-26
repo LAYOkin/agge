@@ -26,12 +26,19 @@ fn unused_placement_id(room: &Room) -> String {
         .expect("unused placement ID")
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum TileTool {
+    Paint,
+    Fill,
+    Rectangle,
+}
+
 pub struct Tools {
     selected: Option<String>,
     place: String,
     snap: u32,
     brush: char,
-    fill: bool,
+    tile_tool: TileTool,
     palette_key: String,
     frame: usize,
     sheet: bool,
@@ -57,7 +64,7 @@ impl Default for Tools {
             place: String::new(),
             snap: 8,
             brush: '#',
-            fill: false,
+            tile_tool: TileTool::Paint,
             palette_key: String::new(),
             frame: 0,
             sheet: true,
@@ -749,9 +756,11 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("{} × {} · brush {}", w, h, work.tool.brush)).color(MUTED))
             .on_hover_text("Right-click a tile to sample the brush.");
-        ui.selectable_value(&mut work.tool.fill, false, "Paint");
-        ui.selectable_value(&mut work.tool.fill, true, "Fill")
+        ui.selectable_value(&mut work.tool.tile_tool, TileTool::Paint, "Paint");
+        ui.selectable_value(&mut work.tool.tile_tool, TileTool::Fill, "Fill")
             .on_hover_text("Replace connected cells that match the clicked tile.");
+        ui.selectable_value(&mut work.tool.tile_tool, TileTool::Rectangle, "Rectangle")
+            .on_hover_text("Drag from one corner to the other to paint an area.");
         work.tool.camera.toolbar(ui);
     });
     let view = work.tool.camera.show(ui, [w as u32, h as u32]);
@@ -773,7 +782,39 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
         || response.dragged_by(PRIMARY)
         || response.drag_stopped_by(PRIMARY);
     let brush = work.tool.brush;
-    if work.tool.fill {
+    let valid_brush = brush == '.' || map.tiles.contains_key(&brush);
+    let mut rectangle = None;
+    if work.tool.tile_tool == TileTool::Rectangle {
+        if response.drag_started_by(PRIMARY) {
+            work.tool.stroke = ui
+                .input(|input| input.pointer.press_origin())
+                .and_then(|p| view.cell(p, w, h));
+        }
+        if valid_brush
+            && let Some(end) = cell
+            && let Some(start) = work
+                .tool
+                .stroke
+                .or_else(|| response.clicked_by(PRIMARY).then_some(end))
+        {
+            let area = [
+                start[0].min(end[0]),
+                start[1].min(end[1]),
+                start[0].abs_diff(end[0]) + 1,
+                start[1].abs_diff(end[1]) + 1,
+            ];
+            if response.clicked_by(PRIMARY) || response.drag_stopped_by(PRIMARY) {
+                if let Err(error) = map.fill_area(area, brush, false) {
+                    work.note(error.to_string(), true);
+                }
+            } else if response.dragged_by(PRIMARY) {
+                rectangle = Some(area);
+            }
+        }
+        if !response.dragged_by(PRIMARY) {
+            work.tool.stroke = None;
+        }
+    } else if work.tool.tile_tool == TileTool::Fill {
         work.tool.stroke = None;
         if response.clicked_by(PRIMARY)
             && let Some(cell) = cell
@@ -782,7 +823,7 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
             work.note(error.to_string(), true);
         }
     } else if let Some(cell) = cell.filter(|_| active)
-        && (brush == '.' || map.tiles.contains_key(&brush))
+        && valid_brush
     {
         let start = work
             .tool
@@ -848,4 +889,11 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
         );
     }
     view.grid(1., 32);
+    if let Some([x, y, w, h]) = rectangle {
+        let outline = Rect::from_min_size(
+            view.rect.min + Vec2::new(x as f32, y as f32) * view.scale,
+            Vec2::new(w as f32, h as f32) * view.scale,
+        );
+        painter.rect_stroke(outline, 0., Stroke::new(2.0_f32, MINT), StrokeKind::Inside);
+    }
 }

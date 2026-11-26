@@ -705,24 +705,10 @@ impl Edit {
             }
             Self::Fill {
                 map,
-                area: [x, y, w, h],
+                area,
                 tile,
                 border,
-            } => {
-                let map = map_mut(project, &map)?;
-                let rows = area_mut(map, [x, y, w, h])?;
-                if !tile.is_ascii() {
-                    return Err(fail("tile must be ASCII"));
-                }
-                for (i, row) in rows.iter_mut().enumerate() {
-                    let replacement = if border && i != 0 && i + 1 != h && w > 2 {
-                        format!("{tile}{}{tile}", &row[x + 1..x + w - 1])
-                    } else {
-                        tile.to_string().repeat(w)
-                    };
-                    row.replace_range(x..x + w, &replacement);
-                }
-            }
+            } => map_mut(project, &map)?.fill_area(area, tile, border)?,
             Self::Flood { map, at, tile } => map_mut(project, &map)?.flood(at, tile)?,
             Self::Stamp {
                 map,
@@ -734,7 +720,8 @@ impl Edit {
                 if rows.iter().any(|row| !row.is_ascii() || row.len() != width) {
                     return Err(fail("stamp rows must be rectangular ASCII"));
                 }
-                for (target, stamp) in area_mut(map, [x, y, width, rows.len()])?
+                for (target, stamp) in map
+                    .area_mut([x, y, width, rows.len()])?
                     .iter_mut()
                     .zip(rows)
                 {
@@ -776,22 +763,6 @@ fn map_mut<'a>(project: &'a mut Project, id: &str) -> Result<&'a mut Tilemap> {
         _ => Err(fail(format!("absent tilemap/{id}"))),
     }
 }
-fn area_mut(map: &mut Tilemap, [x, y, w, h]: [usize; 4]) -> Result<&mut [String]> {
-    let rows = map
-        .rows
-        .get_mut(y..y.saturating_add(h))
-        .ok_or_else(|| fail("area exceeds map height"))?;
-    if w == 0
-        || h == 0
-        || rows
-            .iter()
-            .any(|row| !row.is_ascii() || x.saturating_add(w) > row.len())
-    {
-        return Err(fail("empty area, non-ASCII map or area exceeds map width"));
-    }
-    Ok(rows)
-}
-
 fn rename(project: &mut Project, kind: Kind, id: &str, to: &str) -> Result<()> {
     if !valid_id(to) || project.get(kind, to).is_some() {
         return Err(fail("rename target is invalid or already exists"));

@@ -5,7 +5,9 @@ use agge_core::{Project, Result, asset_path, fail, read_asset, store::Store};
 use agge_runtime::Media;
 use serde_json::{Value, json};
 use std::{
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs,
     io::{self, Read},
     path::{Path, PathBuf},
     process::ExitCode,
@@ -37,11 +39,12 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<bool> {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    let Some(command) = args.first().map(String::as_str) else {
+    let args = env::args_os().skip(1).collect::<Vec<_>>();
+    let Some(command) = args.first() else {
         println!("{HELP}");
         return Ok(true);
     };
+    let command = argument_text(command)?;
     if matches!(command, "help" | "--help" | "-h") {
         println!("{HELP}");
         return Ok(true);
@@ -77,7 +80,7 @@ fn run() -> Result<bool> {
     match command {
         "init" => {
             store.init(&Project::default())?;
-            output(json!({"project": file}))
+            output(json!({"project": file.to_string_lossy()}))
         }
         "mcp" => mcp::serve(&store).map(|()| true),
         "check" => {
@@ -95,9 +98,10 @@ fn run() -> Result<bool> {
             println!("{value}");
             Ok(ok)
         }
-        "undo" | "redo" => output(json!(
-            store.travel(args.get(2).map(String::as_str), command == "redo")?
-        )),
+        "undo" | "redo" => {
+            let revision = args.get(2).map(|arg| argument_text(arg)).transpose()?;
+            output(json!(store.travel(revision, command == "redo")?))
+        }
         "knowledge" => output(service::knowledge(&store, argument()?)?),
         "test" | "inspect" | "capture" => {
             let (value, ok, image) = service::simulate(&store, argument()?, command == "test")?;
@@ -121,8 +125,14 @@ fn run() -> Result<bool> {
     }
 }
 
-fn read_json(input: &str) -> Result<Value> {
+fn argument_text(arg: &OsStr) -> Result<&str> {
+    arg.to_str()
+        .ok_or_else(|| fail("expected a UTF-8 command, JSON argument or revision"))
+}
+
+fn read_json(input: &OsStr) -> Result<Value> {
     const LIMIT: usize = 4 * 1024 * 1024;
+    let input = argument_text(input)?;
     let mut content = String::new();
     let text = if input == "-" {
         io::stdin()
@@ -192,6 +202,6 @@ fn export(store: &Store, output: &Path, player: Option<PathBuf>) -> Result<Value
     Media::load(&loaded.project, stage.path())?;
     fs::rename(stage.path(), output)?;
     Ok(
-        json!({"directory":output, "binary":binary_name, "assets":assets.len(), "revision":loaded.revision}),
+        json!({"directory":output.to_string_lossy(), "binary":binary_name, "assets":assets.len(), "revision":loaded.revision}),
     )
 }

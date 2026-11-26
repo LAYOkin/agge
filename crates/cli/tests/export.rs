@@ -38,3 +38,45 @@ fn export_preserves_the_revision_of_a_noncanonical_project() {
         .unwrap();
     assert!(replay.status.success(), "{replay:?}");
 }
+
+#[cfg(unix)]
+#[test]
+fn cli_accepts_native_paths_for_projects_and_outputs() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join(OsStr::from_bytes(b"game-\xff.agge"));
+    let image = directory.path().join(OsStr::from_bytes(b"image-\xff.png"));
+    let player = directory.path().join(OsStr::from_bytes(b"player-\xff"));
+    let bundle = directory.path().join(OsStr::from_bytes(b"bundle-\xff"));
+    let agge = env!("CARGO_BIN_EXE_agge");
+
+    let init = Command::new(agge)
+        .arg("init")
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(init.status.success(), "{init:?}");
+    let capture = Command::new(agge)
+        .arg("capture")
+        .arg(&source)
+        .arg(r#"{"ticks":0,"crop":[0,0,1,1]}"#)
+        .arg(&image)
+        .output()
+        .unwrap();
+    assert!(capture.status.success(), "{capture:?}");
+    assert!(fs::read(&image).unwrap().starts_with(b"\x89PNG"));
+
+    fs::write(&player, b"test player").unwrap();
+    let export = Command::new(agge)
+        .arg("export")
+        .args([&source, &bundle, &player])
+        .output()
+        .unwrap();
+    assert!(export.status.success(), "{export:?}");
+    assert_eq!(
+        fs::read(bundle.join("game.agge")).unwrap(),
+        fs::read(source).unwrap()
+    );
+    assert_eq!(fs::read(bundle.join("play")).unwrap(), b"test player");
+}

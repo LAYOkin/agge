@@ -900,7 +900,23 @@ impl Workbench {
                 egui::SidePanel::right("runtime_inspector")
                     .default_width(253.)
                     .show(ctx, |ui| {
-                        ui.heading("Runtime");
+                        ui.horizontal(|ui| {
+                            ui.heading("Runtime");
+                            if ui.button("Copy state").clicked() {
+                                match serde_json::to_string(&state) {
+                                    Ok(json) => {
+                                        ui.ctx().copy_text(json);
+                                        self.status =
+                                            format!("Copied state at tick {}", state.tick);
+                                        self.bad = false;
+                                    }
+                                    Err(error) => {
+                                        self.status = error.to_string();
+                                        self.bad = true;
+                                    }
+                                }
+                            }
+                        });
                         ui.label(
                             RichText::new(format!("{} · tick {}", state.room, state.tick))
                                 .monospace()

@@ -74,6 +74,16 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
         json!({"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"agge_run","arguments":{
             "ticks":0,"expect":[{"at":0,"field":"grounded/hero","is":1}]
         }}}),
+        json!({"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"agge_edit","arguments":{
+            "ops":[{"op":"placement","room":"main","id":"hero","at":[80,12]}],
+            "verify":[{"ticks":0,"expect":[{"at":0,"field":"grounded/hero","is":1}]}]
+        }}}),
+        json!({"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"agge_query","arguments":{
+            "read":[{"get":"room/main/instances/hero"},{"get":"room/main/instances/deck"}]
+        }}}),
+        json!({"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"agge_run","arguments":{
+            "ticks":0,"sample":{"at":[0],"fields":["grounded/hero","entity/hero/x"]}
+        }}}),
     ];
     {
         let mut input = child.stdin.take().unwrap();
@@ -88,7 +98,7 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(responses.len(), 22);
+    assert_eq!(responses.len(), 25);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
     assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 6);
     assert_eq!(responses[2]["result"]["isError"], false);
@@ -152,4 +162,69 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
     assert_eq!(data(20)["state"]["entities"][0]["x"], 10.0);
     assert_eq!(data(21)["changed"], json!(["object/ledge", "room/main"]));
     assert_eq!(data(22)["report"]["assertions"], 1);
+    let guard = &responses[22]["result"];
+    assert_eq!(guard["isError"], true);
+    let rejected: Value =
+        serde_json::from_str(guard["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(rejected["committed"], false);
+    assert_eq!(rejected["reports"][0]["failures"][0]["actual"], 0.0);
+    assert_eq!(data(24)["data"][0]["data"][2], 10.0);
+    assert_eq!(data(24)["data"][1]["data"][1], "ledge");
+    assert_eq!(data(25)["report"]["samples"], json!([1.0, 10.0]));
+}
+
+#[test]
+fn cli_batches_reads_and_leaves_failed_or_previewed_edits_uncommitted() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("game.agge");
+    let run = |command: &str, args: Option<Value>| {
+        let mut process = Command::new(env!("CARGO_BIN_EXE_agge"));
+        process.arg(command).arg(&file);
+        if let Some(args) = args {
+            process.arg(args.to_string());
+        }
+        process.output().unwrap()
+    };
+    let parse =
+        |output: &std::process::Output| serde_json::from_slice::<Value>(&output.stdout).unwrap();
+    assert!(run("init", None).status.success());
+    let original = std::fs::read(&file).unwrap();
+    let revision = parse(&run("query", None))["revision"].clone();
+    let ops = json!([{"op":"patch","kind":"room","id":"main","fields":{"bg":[12,18,24,255]}}]);
+    let test = |room| json!([{"ticks":0,"expect":[{"at":0,"field":"room","is":room}]}]);
+    let failed = run(
+        "edit",
+        Some(json!({"base":revision,"ops":ops,"verify":test("wrong")})),
+    );
+    assert_eq!(failed.status.code(), Some(1));
+    let failure = parse(&failed);
+    assert_eq!(failure["committed"], false);
+    assert_eq!(failure["revision"], revision);
+    assert_eq!(failure["reports"][0]["failures"][0]["actual"], "main");
+    let preview = run(
+        "edit",
+        Some(json!({"base":revision,"ops":ops,"verify":test("main"),"preview":true})),
+    );
+    assert!(preview.status.success());
+    assert_eq!(parse(&preview)["committed"], false);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    assert!(!dir.path().join("game.agge.history").exists());
+    let saved = parse(&run(
+        "edit",
+        Some(json!({"base":revision,"ops":ops,"verify":test("main")})),
+    ));
+    assert_eq!(saved["committed"], true);
+    let reads =
+        json!([{"get":"room/main","path":"/bg"},{"get":"object/missing"},{"refs":"room/main"}]);
+    let stale = run("query", Some(json!({"base":revision,"read":reads})));
+    assert_eq!(stale.status.code(), Some(2));
+    let batch = parse(&run(
+        "query",
+        Some(json!({"base":saved["revision"],"read":reads})),
+    ));
+    assert_eq!(batch["data"][0]["data"], json!([12, 18, 24, 255]));
+    assert_eq!(batch["data"][1]["error"], "absent object/missing");
+    assert!(batch["data"][2]["items"].is_array());
+    assert!(run("undo", None).status.success());
+    assert_eq!(std::fs::read(&file).unwrap(), original);
 }

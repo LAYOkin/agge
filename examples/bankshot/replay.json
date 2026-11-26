@@ -1,0 +1,77 @@
+{
+  "ticks": 141,
+  "input": [
+    [
+      1,
+      1,
+      "fire"
+    ],
+    [
+      141,
+      141,
+      "confirm"
+    ]
+  ],
+  "expect": [
+    {
+      "at": 0,
+      "field": "global/aim",
+      "is": 180
+    },
+    {
+      "at": 0,
+      "field": "count/relay",
+      "is": 3
+    },
+    {
+      "at": 1,
+      "field": "global/shots",
+      "is": 1
+    },
+    {
+      "at": 17,
+      "field": "global/relays",
+      "is": 1
+    },
+    {
+      "at": 43,
+      "field": "entity/ball/vy",
+      "is": 180
+    },
+    {
+      "at": 56,
+      "field": "global/relays",
+      "is": 2
+    },
+    {
+      "at": 79,
+      "field": "entity/ball/vx",
+      "is": -180
+    },
+    {
+      "at": 95,
+      "field": "global/relays",
+      "is": 3
+    },
+    {
+      "at": 95,
+      "field": "entity/ball/vy",
+      "is": -180
+    },
+    {
+      "at": 121,
+      "field": "room",
+      "is": "clear"
+    },
+    {
+      "at": 141,
+      "field": "room",
+      "is": "table"
+    },
+    {
+      "at": 141,
+      "field": "global/shots",
+      "is": 0
+    }
+  ]
+}

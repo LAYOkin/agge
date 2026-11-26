@@ -423,6 +423,15 @@ pub enum Edit {
         id: String,
         at: [f32; 2],
     },
+    Placement {
+        room: String,
+        id: String,
+        to: Option<String>,
+        at: Option<[f32; 2]>,
+        object: Option<String>,
+        #[serde(default)]
+        remove: bool,
+    },
     Grid {
         room: String,
         object: String,
@@ -537,6 +546,45 @@ impl Edit {
                 let room = room_mut(project, &room)?;
                 room.instances
                     .push(crate::Instance(id, object, at[0], at[1]));
+            }
+            Self::Placement {
+                room,
+                id,
+                to,
+                at,
+                object,
+                remove,
+            } => {
+                let layout = room_mut(project, &room)?;
+                let index = layout
+                    .instances
+                    .iter()
+                    .position(|item| item.0 == id)
+                    .ok_or_else(|| fail(format!("absent room/{room}/instances/{id}")))?;
+                let tracked = layout.camera.follow.as_deref() == Some(&id);
+                if remove {
+                    if to.is_some() || at.is_some() || object.is_some() {
+                        return Err(fail("remove cannot be combined with placement changes"));
+                    }
+                    layout.instances.remove(index);
+                    if tracked {
+                        layout.camera.follow = None;
+                    }
+                } else {
+                    let item = &mut layout.instances[index];
+                    if let Some(to) = to {
+                        if tracked {
+                            layout.camera.follow = Some(to.clone());
+                        }
+                        item.0 = to;
+                    }
+                    if let Some([x, y]) = at {
+                        (item.2, item.3) = (x, y);
+                    }
+                    if let Some(object) = object {
+                        item.1 = object;
+                    }
+                }
             }
             Self::Grid {
                 room,

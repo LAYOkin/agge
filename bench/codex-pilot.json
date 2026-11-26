@@ -1,0 +1,129 @@
+{
+  "date": "2026-11-26",
+  "platform": "Windows",
+  "codex_cli": "0.171.0-alpha.13.2",
+  "godot": "4.5.1",
+  "timeout_seconds": 110,
+  "trials": [
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "grid",
+      "engine": "agge",
+      "trial": "1",
+      "completed": true,
+      "correct": false,
+      "status": 0,
+      "usage": {
+        "input_tokens": 53492,
+        "cached_input_tokens": 49536,
+        "output_tokens": 193
+      },
+      "blocked_tool_calls": 2,
+      "workspace_routing_errors": 0
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "grid",
+      "engine": "godot",
+      "trial": "1",
+      "completed": true,
+      "correct": false,
+      "status": 0,
+      "usage": {
+        "input_tokens": 71869,
+        "cached_input_tokens": 67584,
+        "output_tokens": 296
+      },
+      "blocked_tool_calls": 2,
+      "workspace_routing_errors": 0
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "rename",
+      "engine": "godot",
+      "trial": "1",
+      "completed": true,
+      "correct": false,
+      "status": 0,
+      "usage": {
+        "input_tokens": 71527,
+        "cached_input_tokens": 67328,
+        "output_tokens": 195
+      },
+      "blocked_tool_calls": 3,
+      "workspace_routing_errors": 0
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "rename",
+      "engine": "agge",
+      "trial": "1",
+      "completed": false,
+      "correct": false,
+      "status": "timeout",
+      "usage": null,
+      "blocked_tool_calls": 1,
+      "workspace_routing_errors": 0
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "sprint",
+      "engine": "agge",
+      "trial": "1",
+      "completed": false,
+      "correct": false,
+      "status": 1,
+      "usage": null,
+      "blocked_tool_calls": 0,
+      "workspace_routing_errors": 11
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "sprint",
+      "engine": "godot",
+      "trial": "1",
+      "completed": false,
+      "correct": false,
+      "status": 1,
+      "usage": null,
+      "blocked_tool_calls": 0,
+      "workspace_routing_errors": 11
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "atlas",
+      "engine": "godot",
+      "trial": "1",
+      "completed": false,
+      "correct": false,
+      "status": 1,
+      "usage": null,
+      "blocked_tool_calls": 0,
+      "workspace_routing_errors": 11
+    },
+    {
+      "model": "gpt-6.2-sol",
+      "effort": "low",
+      "task": "atlas",
+      "engine": "agge",
+      "trial": "1",
+      "completed": true,
+      "correct": false,
+      "status": 0,
+      "usage": {
+        "input_tokens": 62929,
+        "cached_input_tokens": 43904,
+        "output_tokens": 237
+      },
+      "blocked_tool_calls": 3,
+      "workspace_routing_errors": 3
+    }
+  ]
+}

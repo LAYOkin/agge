@@ -1,0 +1,80 @@
+agge/1 {"title":"Bank Shot","start":"table","size":[320,208],"hz":60,"seed":31,"bindings":{"reset":["R"]}}
+room clear {"bg":[17,27,49,255],"instances":[["prompt","prompt",0.0,0.0]],"ui":[{"at":[41.0,64.0],"text":"CIRCUIT CLOSED","color":[117,235,193,255],"size":25},{"at":[43.0,104.0],"text":"SHOTS USED ","color":[255,191,92,255],"size":15,"value":"shots"},{"at":[44.0,141.0],"text":"PRESS ENTER FOR A NEW TABLE","color":[165,184,220,255],"size":11}]}
+room retry {"bg":[36,25,48,255],"instances":[["prompt","prompt",0.0,0.0]],"ui":[{"at":[45.0,69.0],"text":"OUT OF SHOTS","color":[255,191,92,255],"size":25},{"at":[45.0,128.0],"text":"PRESS ENTER TO TRY AGAIN","color":[165,184,220,255],"size":12}]}
+room table {"bg":[15,21,41,255],"instances":[["ball","ball",60.0,144.0],["first","relay",114.0,90.0],["second","relay",228.0,55.0],["third","relay",236.0,162.0],["rule","controller",0.0,0.0]],"maps":["table"],"lights":[{"at":[160.0,98.0],"radius":122.0,"color":[146,200,255,255]}],"ui":[{"at":[20.0,5.0],"text":"BANK SHOT","color":[117,235,193,255],"size":10},{"at":[218.0,5.0],"text":"RELAYS ","color":[255,191,92,255],"size":10,"value":"relays"},{"at":[19.0,183.0],"text":"ARROWS AIM   SPACE SHOOTS","color":[165,184,220,255],"size":10},{"at":[19.0,196.0],"text":"R TO RESET   SHOTS ","color":[165,184,220,255],"size":9,"value":"shots"},{"at":[227.0,196.0],"text":"AIM ","color":[255,191,92,255],"size":9,"value":"aim"}],"darkness":0.21}
+object ball {"size":[8.0,8.0],"color":[255,191,92,255],"shape":"circle","script":"ball"}
+object controller {"size":[16.0,16.0],"color":[255,255,255,255],"script":"controller","hidden":true}
+object prompt {"size":[16.0,16.0],"color":[255,255,255,255],"script":"prompt","hidden":true}
+object relay {"size":[16.0,16.0],"color":[117,235,193,255],"shape":"circle","script":"relay"}
+tilemap table {"cell":16,"tiles":{"#":[[48,78,111,255],true],"o":[[37,57,87,255]]},"rows":["####################","#..................#","#..................#","#..o...o...o...o...#","#..................#","#..................#","#..o...o...o...o...#","#..................#","#..................#","#..o...o...o...o...#","#..................#","####################","...................."]}
+script ball
+create:
+  set aim = 180
+  set age = 0
+  global aim = aim
+step:
+  if age > 0
+    set age = age - 1
+    if age == 0
+      set x = 60
+      set y = 144
+      set vx = 0
+      set vy = 0
+    end
+  else
+    set aim = clamp(aim + (down("right") - down("left")) * 90 * dt, -240, 240)
+    global aim = floor(aim)
+    if pressed("fire") && global(shots) < 3
+      global shots = global(shots) + 1
+      set vx = aim
+      set vy = -180
+      set age = 150
+    end
+  end
+hit_x:
+  set vx = -impact()
+  emit spark
+hit_y:
+  set vy = -impact()
+  emit spark
+---
+script controller
+create:
+  global relays = 0
+  global shots = 0
+  set finish = 22
+  set age = 0
+step:
+  if pressed("reset")
+    goto table
+  end
+  if global(relays) == 3
+    set finish = finish - 1
+    if finish == 0
+      goto clear
+    end
+  else
+    if global(shots) == 3
+      set age = age + 1
+      if age > 150
+        goto retry
+      end
+    end
+  end
+---
+script prompt
+step:
+  if pressed("confirm")
+    goto table
+  end
+---
+script relay
+step:
+  if touch("ball")
+    global relays = global(relays) + 1
+    emit relay_flash
+    destroy
+  end
+---
+particle relay_flash {"count":25,"life":29,"speed":135.0,"radius":1.7,"color":[117,235,193,255]}
+particle spark {"count":9,"life":16,"speed":76.0,"radius":1.4,"color":[255,191,92,255]}

@@ -7,6 +7,8 @@ use std::{collections::BTreeMap, ops::Range};
 pub enum Event {
     Create,
     Step,
+    HitX,
+    HitY,
 }
 
 impl Event {
@@ -14,6 +16,8 @@ impl Event {
         match self {
             Self::Create => "create",
             Self::Step => "step",
+            Self::HitX => "hit_x",
+            Self::HitY => "hit_y",
         }
     }
 }
@@ -184,6 +188,7 @@ pub enum Expr {
     Pressed(String),
     Touch(String),
     Grounded,
+    Impact,
     Blocked(Box<Expr>, Box<Expr>),
     Random,
     View(ViewProperty),
@@ -332,6 +337,7 @@ impl<'a> Parser<'a> {
                 | "global"
                 | "touch"
                 | "grounded"
+                | "impact"
                 | "blocked"
                 | "down"
                 | "pressed"
@@ -480,6 +486,7 @@ impl<'a> Parser<'a> {
                             Expr::Global(name)
                         }
                         "grounded" => Expr::Grounded,
+                        "impact" => Expr::Impact,
                         "blocked" => {
                             let (x, y) = self.xy()?;
                             Expr::Blocked(Box::new(x), Box::new(y))
@@ -613,12 +620,13 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
     let head = p.name()?;
     use Statement::*;
     let line = match head.as_str() {
-        "create" | "step" => {
+        "create" | "step" | "hit_x" | "hit_y" => {
             p.punct(':')?;
-            Line::Event(if head == "create" {
-                Event::Create
-            } else {
-                Event::Step
+            Line::Event(match head.as_str() {
+                "create" => Event::Create,
+                "step" => Event::Step,
+                "hit_x" => Event::HitX,
+                _ => Event::HitY,
             })
         }
         "fn" => p.function()?,

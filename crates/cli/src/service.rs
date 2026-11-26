@@ -1,11 +1,12 @@
 use agge_core::{
     Edit, Index, Kind, Resource, Result, fail,
     script::{self, Event},
-    store::Store,
+    store::{Loaded, Store},
 };
 use agge_runtime::{Media, Replay, capture, replay};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::cell::OnceCell;
 
 pub fn check(store: &Store) -> Result<(Value, bool)> {
     let loaded = store.load()?;
@@ -44,50 +45,102 @@ struct Query {
     #[serde(default = "default_limit")]
     limit: usize,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Reads {
+    read: Vec<Query>,
+    base: Option<String>,
+}
 fn default_limit() -> usize {
     64
 }
 
 pub fn query(store: &Store, args: Value) -> Result<Value> {
-    let args: Query = serde_json::from_value(args)?;
-    let modes = [
-        &args.get,
-        &args.refs,
-        &args.outline,
-        &args.prefix,
-        &args.schema,
-        &args.session,
-    ];
-    let selectors = usize::from(args.path.is_some())
-        + usize::from(args.lines.is_some())
-        + usize::from(args.event.is_some())
-        + usize::from(args.function.is_some());
-    if modes.into_iter().filter(|option| option.is_some()).count() > 1
-        || selectors > 1
-        || selectors != 0 && args.get.is_none()
-        || args.symbol.is_some() && args.outline.is_none()
-    {
-        return Err(fail("choose one query mode and its applicable selectors"));
+    if args.get("read").is_some() {
+        let batch: Reads = serde_json::from_value(args)?;
+        if !(1..=16).contains(&batch.read.len()) {
+            return Err(fail("read must contain 1–16 queries"));
+        }
+        let loaded = store.load()?;
+        if let Some(base) = batch.base.as_deref()
+            && base != loaded.revision
+        {
+            return Err(fail(format!(
+                "stale revision; current is {}",
+                loaded.revision
+            )));
+        }
+        let index = OnceCell::new();
+        let mut data = Vec::with_capacity(batch.read.len());
+        let mut bytes = 0;
+        for args in batch.read {
+            let value = match query_data(args, &loaded, &index) {
+                Ok(value) => value,
+                Err(error) => json!({"error":error.to_string()}),
+            };
+            bytes += value.to_string().len();
+            if bytes > 2 * 1024 * 1024 {
+                return Err(fail("batched response exceeds 2 MiB; narrow the reads"));
+            }
+            data.push(value);
+        }
+        return Ok(json!({"revision":loaded.revision,"data":data}));
     }
-
+    let args: Query = serde_json::from_value(args)?;
+    args.validate()?;
     if let Some(schema) = args.schema {
         return guide(&schema);
     }
     if let Some(session) = args.session {
-        if args.get.is_some() || args.refs.is_some() || args.prefix.is_some() || args.offset > 0 {
+        if args.offset > 0 {
             return Err(fail("session delta must be queried by itself"));
         }
         return Ok(json!(store.delta(&session, args.advance)?));
     }
-    if args.advance
-        || args.limit == 0
-        || args.limit > 256
-        || args.get.is_some() && args.refs.is_some()
-    {
-        return Err(fail("invalid query combination or limit outside 1–256"));
-    }
     let loaded = store.load()?;
-    let mut result = json!({"revision":loaded.revision});
+    let mut result = query_data(args, &loaded, &OnceCell::new())?;
+    result["revision"] = json!(loaded.revision);
+    Ok(result)
+}
+
+impl Query {
+    fn validate(&self) -> Result<()> {
+        let args = self;
+        let modes = [
+            &args.get,
+            &args.refs,
+            &args.outline,
+            &args.prefix,
+            &args.schema,
+            &args.session,
+        ];
+        let selectors = usize::from(args.path.is_some())
+            + usize::from(args.lines.is_some())
+            + usize::from(args.event.is_some())
+            + usize::from(args.function.is_some());
+        if modes.into_iter().filter(|option| option.is_some()).count() > 1
+            || selectors > 1
+            || selectors != 0 && args.get.is_none()
+            || args.symbol.is_some() && args.outline.is_none()
+        {
+            return Err(fail("choose one query mode and its applicable selectors"));
+        }
+
+        if args.advance && args.session.is_none() || args.limit == 0 || args.limit > 256 {
+            return Err(fail("invalid query combination or limit outside 1–256"));
+        }
+        Ok(())
+    }
+}
+
+fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<Value> {
+    args.validate()?;
+    if args.session.is_some() || args.schema.is_some() {
+        return Err(fail(
+            "schema and session queries must be requested separately",
+        ));
+    }
+    let mut result = json!({});
     if let Some(key) = args.outline {
         let source = script_source(&loaded.project, &key)?;
         let program = script::compile(source)?;
@@ -142,6 +195,19 @@ pub fn query(store: &Store, args: Value) -> Result<Value> {
             )
         } else if key == "project" {
             json!(loaded.project.settings)
+        } else if let Some((room, placement)) = key
+            .strip_prefix("room/")
+            .and_then(|key| key.split_once("/instances/"))
+        {
+            let Some(Resource::Room(room)) = loaded.project.get(Kind::Room, room) else {
+                return Err(fail(format!("absent {key}")));
+            };
+            json!(
+                room.instances
+                    .iter()
+                    .find(|item| item.0 == placement)
+                    .ok_or_else(|| fail(format!("absent {key}")))?
+            )
         } else {
             let (kind, id) = key
                 .split_once('/')
@@ -184,7 +250,7 @@ pub fn query(store: &Store, args: Value) -> Result<Value> {
         return Ok(result);
     }
     if let Some(key) = args.refs {
-        let index = Index::build(&loaded.project);
+        let index = index.get_or_init(|| Index::build(&loaded.project));
         let links = index
             .edges
             .iter()
@@ -234,13 +300,56 @@ struct Batch {
     #[serde(default)]
     base: Option<String>,
     ops: Vec<Edit>,
+    #[serde(default)]
+    preview: bool,
+    #[serde(default)]
+    verify: Vec<Replay>,
 }
-pub fn edit(store: &Store, args: Value) -> Result<Value> {
+pub fn edit(store: &Store, args: Value) -> Result<(Value, bool)> {
     let batch: Batch = serde_json::from_value(args)?;
     if batch.ops.is_empty() || batch.ops.len() > 256 {
         return Err(fail("batch must contain 1–256 edits"));
     }
-    Ok(json!(store.transact(batch.base.as_deref(), batch.ops)?))
+    if batch.verify.len() > 4
+        || batch
+            .verify
+            .iter()
+            .map(|spec| u64::from(spec.ticks))
+            .sum::<u64>()
+            > 6000
+        || batch.verify.iter().any(|spec| spec.expect.is_empty())
+    {
+        return Err(fail(
+            "verify accepts up to four replays with assertions and 6000 total ticks",
+        ));
+    }
+    if !batch.preview && batch.verify.is_empty() {
+        return Ok((
+            json!(store.transact(batch.base.as_deref(), batch.ops)?),
+            true,
+        ));
+    }
+    let mut reports = Vec::new();
+    let (receipt, passed) =
+        store.transact_checked(batch.base.as_deref(), batch.ops, batch.preview, |project| {
+            for spec in &batch.verify {
+                let (_, report) = replay(project.clone(), spec)?;
+                let passed = report.passed();
+                reports.push(report);
+                if !passed {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        })?;
+    let mut result = json!(receipt);
+    result["committed"] = json!(
+        passed && !batch.preview && (!receipt.changed.is_empty() || !receipt.removed.is_empty())
+    );
+    if !reports.is_empty() {
+        result["reports"] = json!(reports);
+    }
+    Ok((result, passed))
 }
 
 #[derive(Deserialize)]
@@ -307,6 +416,14 @@ pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simul
 }
 
 fn guide(key: &str) -> Result<Value> {
+    if let Some(op) = key.strip_prefix("edit/") {
+        let examples = guide("edits")?;
+        return examples
+            .as_array()
+            .and_then(|items| items.iter().find(|item| item["op"] == op))
+            .cloned()
+            .ok_or_else(|| fail("unknown edit operation"));
+    }
     Ok(match key {
         "edits" => json!([
             {"op":"put","kind":"object","id":"player","data":{"size":[20,20]}},
@@ -317,6 +434,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"script_event","id":"drive","event":"step","body":"  move 120 * dt, 0"},
             {"op":"splice","id":"drive","at":[3,1],"text":"  move 180 * dt, 0"},
             {"op":"place","room":"main","object":"player","id":"hero","at":[32,48]},
+            {"op":"placement","room":"main","id":"hero","to":"pilot","at":[48,48]},
             {"op":"grid","room":"main","object":"player","prefix":"row","at":[0,0],"step":[32,32],"size":[5,2]},
             {"op":"camera","room":"main","size":[1280,720],"follow":"hero","dead":[80,40],"smooth":12},
             {"op":"slice","id":"terrain","cell":[16,16],"grid":[4,2]},
@@ -333,7 +451,7 @@ fn guide(key: &str) -> Result<Value> {
         "sprite" => json!({"file":"art/ship.png","frames":[[0,0,16,16]]}),
         "animation" => json!({"sprite":"ship","frames":[0,1],"fps":10}),
         "script" => {
-            json!({"example":"create:\n  set vx = 120\nstep:\n  if pressed(\"fire\")\n    spawn shot x, y\n  end","commands":["set name = value","global name = value","move dx, dy","camera x, y","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","touch(\"object\")","global(name)","grounded()","blocked(dx,dy)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
+            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","touch(\"object\")","global(name)","grounded()","blocked(dx,dy)","impact()","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
         }
         "tilemap" => {
             json!({"cell":16,"at":[0,0],"atlas":"terrain","tiles":{"#":[[120,140,160,255],true],"a":[0],"b":[1,true]},"rows":["###","#a#","b##"]})
@@ -343,7 +461,7 @@ fn guide(key: &str) -> Result<Value> {
             json!({"count":12,"life":30,"speed":120,"radius":2,"color":[230,200,110,255],"gravity":80})
         }
         "replay" => {
-            json!({"ticks":20,"input":[[1,5,"right"]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"fields":["room","particles","camera/x","camera/y","grounded/placement","count/object","global/name","entity/placement/property"]})
+            json!({"ticks":20,"input":[[1,5,"right"]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"fields":["room","particles","camera/x","camera/y","grounded/placement","count/object","global/name","entity/placement/property"]})
         }
         "project" => json!(agge_core::Settings::default()),
         _ => {

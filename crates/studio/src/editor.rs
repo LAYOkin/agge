@@ -179,6 +179,44 @@ impl Workbench {
     fn dirty(&self) -> bool {
         self.draft.as_ref().is_some_and(Draft::dirty)
     }
+    fn open_reference(&mut self, reference: &str, location: &str) {
+        if self.dirty() {
+            self.note("Apply or discard the current changes first", true);
+            return;
+        }
+        if reference == "project" {
+            self.settings = Some(self.loaded.project.settings.clone());
+            return;
+        }
+        let mut parts = reference.splitn(3, '/');
+        let (Some(kind), Some(id), tail) = (parts.next(), parts.next(), parts.next()) else {
+            return;
+        };
+        let Ok(kind) = kind.parse::<Kind>() else {
+            return;
+        };
+        if self.loaded.project.get(kind, id).is_none() {
+            self.note(format!("Missing {kind}/{id}"), true);
+            return;
+        }
+        self.select(kind, id);
+        if kind == Kind::Script {
+            self.jump_line = tail
+                .and_then(|tail| tail.strip_prefix("fn/"))
+                .and_then(|name| self.index.programs.get(id)?.functions.get(name))
+                .map(|function| function.line)
+                .or_else(|| {
+                    location
+                        .strip_prefix("line/")
+                        .and_then(|line| line.parse().ok())
+                });
+        }
+        if kind == Kind::Room
+            && let Some(placement) = tail.unwrap_or(location).strip_prefix("instances/")
+        {
+            self.tool.select_placement(placement);
+        }
+    }
     pub fn note(&mut self, message: impl Into<String>, bad: bool) {
         self.status = message.into();
         self.bad = bad;
@@ -288,11 +326,15 @@ impl Workbench {
             .as_ref()
             .filter(|draft| draft.kind == Kind::Room)
             .map(|d| d.id.as_str());
-        self.play = Some(Play::new(
+        let mut play = Play::new(
             self.loaded.project.clone(),
             self.store.root().to_owned(),
             room,
-        )?);
+        )?;
+        play.recording = Some(agge_runtime::ReplayRecorder::new(
+            room.unwrap_or(&self.loaded.project.settings.start),
+        ));
+        self.play = Some(play);
         self.play_canvas = Canvas::default();
         Ok(())
     }
@@ -373,6 +415,22 @@ impl Workbench {
                         }
                     }
                     ui.checkbox(&mut self.inspect, "Runtime inspector");
+                    if let Some(recording) = &play.recording
+                        && ui
+                            .button("Copy replay")
+                            .on_hover_text(if recording.full {
+                                "Recording limit reached. Copy the recorded prefix."
+                            } else {
+                                "Copy the playtest inputs as JSON for agge test."
+                            })
+                            .clicked()
+                        && let Ok(json) = serde_json::to_string(recording.replay())
+                    {
+                        ui.ctx().copy_text(json);
+                        self.status =
+                            format!("Copied replay through tick {}", recording.replay().ticks);
+                        self.bad = false;
+                    }
                 }
             } else {
                 if ui
@@ -694,6 +752,7 @@ impl Workbench {
         let mut draft = self.draft.take();
         let mut rename = false;
         let mut remove = false;
+        let mut navigate = None;
         if let Some(entry) = &mut draft {
             let mut resource = entry.resource();
             egui::SidePanel::right("inspector")
@@ -718,7 +777,6 @@ impl Workbench {
                     ui.separator();
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         if self.raw || entry.kind == Kind::Script {
-                            let key = format!("{}/{}", entry.kind, entry.id);
                             if entry.kind == Kind::Script
                                 && !entry.dirty()
                                 && let Some(program) = self.index.programs.get(&entry.id)
@@ -751,25 +809,50 @@ impl Workbench {
                                     }
                                 });
                             }
-                            for e in self
-                                .index
-                                .edges
-                                .iter()
-                                .filter(|e| e.from == key || e.to == key)
-                                .take(40)
-                            {
-                                ui.small(format!("{} → {} · {}", e.from, e.to, e.at));
-                            }
-                            for d in self.index.diagnostics.iter().filter(|d| {
-                                d.at == key
-                                    || d.at
-                                        .strip_prefix(&key)
-                                        .is_some_and(|suffix| suffix.starts_with('/'))
-                            }) {
-                                ui.colored_label(Color32::LIGHT_RED, &d.message);
-                            }
                         } else if let Ok(resource) = &mut resource {
                             panels::properties(ui, resource, &self.loaded.project, &mut self.tool);
+                        }
+                        let key = format!("{}/{}", entry.kind, entry.id);
+                        let belongs = |id: &str| {
+                            id == key || id.strip_prefix(&key).is_some_and(|s| s.starts_with('/'))
+                        };
+                        for diagnostic in self.index.diagnostics.iter().filter(|d| belongs(&d.at)) {
+                            ui.colored_label(Color32::LIGHT_RED, &diagnostic.message);
+                        }
+                        let edges: Vec<_> = self
+                            .index
+                            .edges
+                            .iter()
+                            .filter(|edge| belongs(&edge.from) || belongs(&edge.to))
+                            .collect();
+                        if !edges.is_empty() {
+                            ui.collapsing(format!("References ({})", edges.len()), |ui| {
+                                let height = ui.spacing().interact_size.y;
+                                egui::ScrollArea::vertical()
+                                    .id_salt("asset_refs")
+                                    .max_height(180.)
+                                    .show_rows(ui, height, edges.len(), |ui, range| {
+                                        for edge in &edges[range] {
+                                            let outgoing = belongs(&edge.from);
+                                            let (direction, target, location) = if outgoing {
+                                                ("Uses", &edge.to, "")
+                                            } else {
+                                                ("Used by", &edge.from, edge.at.as_str())
+                                            };
+                                            let label = format!("{direction} {target}");
+                                            if target.starts_with("asset/") {
+                                                ui.label(label).on_hover_text(&edge.at);
+                                            } else if ui
+                                                .link(label)
+                                                .on_hover_text(&edge.at)
+                                                .clicked()
+                                            {
+                                                navigate =
+                                                    Some((target.clone(), location.to_owned()));
+                                            }
+                                        }
+                                    });
+                            });
                         }
                     });
                 });
@@ -799,6 +882,9 @@ impl Workbench {
             });
         }
         self.draft = draft;
+        if let Some((reference, location)) = navigate {
+            self.open_reference(&reference, &location);
+        }
         if rename {
             self.rename = self.draft.as_ref().map(|d| d.id.clone());
         }

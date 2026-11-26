@@ -14,6 +14,8 @@
 
 Put PNG and WAV or OGG assets in folders beside the project. Create a **Sprite** or **Audio** resource with a relative path such as `art/pilot.png`. For sprite sheets, add one [x, y, width, height] rectangle per frame, then make an **Animation** that lists the frame indices in order. Link the object to the animation or directly to the sprite.
 
+Expand **References** in the inspector to navigate between related resources. Incoming script references can jump to the call site, and room references can select a linked placement.
+
 With the tilemap editor, set the grid dimensions and cell size, create or select a palette character, and paint inside the canvas. Enable **Solid** for tiles that should block movement. Add the tilemap under the room's **Tilemap layers**. Use the room's lights, ambient darkness, and HUD label controls to finish the room.
 
 Use the mouse wheel to zoom at the pointer and drag with the middle mouse button to pan in the room and tilemap canvases. **Fit** restores the full view. Hold the primary button to paint a continuous stroke in the tilemap, then choose **Apply** to save it as one undoable change.
@@ -42,6 +44,10 @@ agge test my_game/game.agge @movement.json
 ```
 
 That test uses the default rate of 60 ticks per second. It checks the same movement script the player runs.
+
+To capture a playtest in Studio, press **Play**, perform the sequence, and select **Copy replay** while the playtest is still open. You can pause before copying to hold the end tick. Paste the JSON into `movement.json` and add an `expect` array for the outcomes you want to preserve. The recording stores action spans and the starting room. It includes manual steps and stops recording at the replay size limits.
+
+For examples of collision gameplay, open `examples/switchback/game.agge` for grounded jumps and one-way platforms, or `examples/bankshot/game.agge` for a short arcade game built around `hit_x` and `hit_y`.
 
 ## Package the game
 

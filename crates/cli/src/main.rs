@@ -90,7 +90,11 @@ fn run() -> Result<bool> {
             args.get(2)
                 .map_or_else(|| Ok(json!({})), |s| read_json(s))?,
         )?),
-        "edit" => output(service::edit(&store, argument()?)?),
+        "edit" => {
+            let (value, ok) = service::edit(&store, argument()?)?;
+            println!("{value}");
+            Ok(ok)
+        }
         "undo" | "redo" => output(json!(
             store.travel(args.get(2).map(String::as_str), command == "redo")?
         )),

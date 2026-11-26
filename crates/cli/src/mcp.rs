@@ -122,14 +122,14 @@ fn tool_list() -> Vec<Value> {
     vec![
         tool(
             NAMES[0],
-            "List IDs, fetch a resource, event, or function, outline script symbols, trace refs, or diff a session.",
-            json!({"get":text,"path":text,"lines":array,"event":text,"function":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text}),
+            "Read IDs, fields, events, symbols, refs, or session changes. read batches queries at one revision.",
+            json!({"get":text,"path":text,"lines":array,"event":text,"function":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
             json!([]),
         ),
         tool(
             NAMES[1],
-            "Atomic ops with optional base revision. Query schema edits for forms.",
-            json!({"ops":{"type":"array","items":{"type":"object"}},"base":text}),
+            "Atomic edits. preview leaves the project untouched. verify requires replays to pass before commit. Query schema edits for forms.",
+            json!({"ops":{"type":"array","items":{"type":"object"}},"base":text,"preview":boolean,"verify":array}),
             json!(["ops"]),
         ),
         tool(
@@ -140,8 +140,8 @@ fn tool_list() -> Vec<Value> {
         ),
         tool(
             NAMES[3],
-            "Fixed-tick replay. Input rows [first,last,action]. Assertions {at,field,is,tolerance?}. Optional select {object?,placement?} and PNG crop [x,y,w,h].",
-            json!({"ticks":number,"room":text,"input":array,"expect":array,"select":{"type":"object"},"crop":array}),
+            "Replay. input [first,last,action], expect {at,field,is,tolerance?}, sample [[tick,field]] or {at,fields}. Optional state and PNG crop.",
+            json!({"ticks":number,"room":text,"input":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array}),
             json!(["ticks"]),
         ),
         tool(
@@ -166,7 +166,10 @@ fn call(store: &Store, name: &str, args: Value) -> Value {
         }
         let value = match name {
             "agge_query" => service::query(store, args)?,
-            "agge_edit" => service::edit(store, args)?,
+            "agge_edit" => {
+                let (value, ok) = service::edit(store, args)?;
+                return Ok((value, ok, None));
+            }
             "agge_check" => {
                 if args != json!({}) {
                     return Err(fail("check takes no arguments"));

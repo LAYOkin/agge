@@ -6,6 +6,61 @@ fn edit(json: serde_json::Value) -> Edit {
 }
 
 #[test]
+fn oversized_edits_keep_the_original_project_readable() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().join("test.agge"));
+    store.init(&Project::default()).unwrap();
+    let base = store.load().unwrap().revision;
+    let source = format!("#{}\n", "x".repeat(2 * 1024 * 1024));
+    let error = store
+        .transact(
+            Some(&base),
+            vec![edit(json!({
+                "op":"put","kind":"script","id":"large","data":source
+            }))],
+        )
+        .unwrap_err();
+    assert_eq!(error.to_string(), "project exceeds 2 MiB");
+    assert_eq!(store.load().unwrap().revision, base);
+    assert!(store.travel(Some(&base), false).is_err());
+}
+
+#[test]
+fn placement_edits_keep_the_camera_reference_and_other_instances() {
+    let mut project = Project::default();
+    for op in [
+        json!({"op":"put","kind":"object","id":"actor","data":{}}),
+        json!({"op":"place","room":"main","id":"hero","object":"actor","at":[12,16]}),
+        json!({"op":"place","room":"main","id":"friend","object":"actor","at":[70,80]}),
+        json!({"op":"camera","room":"main","follow":"hero"}),
+        json!({"op":"placement","room":"main","id":"hero","to":"pilot","at":[24,32]}),
+    ] {
+        edit(op).apply(&mut project).unwrap();
+    }
+    Index::build(&project).require_valid().unwrap();
+    let room = |project: &Project| project.get(Kind::Room, "main").unwrap().encode(false);
+    let updated: serde_json::Value = serde_json::from_str(&room(&project)).unwrap();
+    assert_eq!(updated["camera"]["follow"], "pilot");
+    assert_eq!(
+        updated["instances"],
+        json!([
+            ["pilot", "actor", 24.0, 32.0],
+            ["friend", "actor", 70.0, 80.0]
+        ])
+    );
+    edit(json!({"op":"placement","room":"main","id":"pilot","remove":true}))
+        .apply(&mut project)
+        .unwrap();
+    Index::build(&project).require_valid().unwrap();
+    let updated: serde_json::Value = serde_json::from_str(&room(&project)).unwrap();
+    assert!(updated.get("camera").is_none());
+    assert_eq!(
+        updated["instances"],
+        json!([["friend", "actor", 70.0, 80.0]])
+    );
+}
+
+#[test]
 fn transaction_rename_history_and_context() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("test.agge");

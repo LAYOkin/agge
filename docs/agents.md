@@ -19,10 +19,10 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 
 | MCP tool | Equivalent CLI | Inputs |
 | --- | --- | --- |
-| `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `outline`, `refs`, `session`, or `schema` |
-| `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops}` |
+| `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `outline`, `refs`, `session`, `read`, or `schema` |
+| `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops,preview?,verify?}` |
 | `agge_check` | `agge check PROJECT` | Empty object |
-| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,input?,expect?,select?,crop?}` |
+| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,input?,expect?,sample?,select?,crop?}` |
 | `agge_history` | `agge undo` or `agge redo` | `{redo,base?}` |
 | `agge_knowledge` | `agge knowledge PROJECT JSON` | `{op,key?,value?}` |
 
@@ -30,11 +30,15 @@ A CLI JSON argument can be inline, `@file.json`, or `-` for stdin. Exit codes ar
 
 Example queries include `{"prefix":"room/","limit":8}`, `{"refs":"object/pilot"}`, `{"get":"room/main","path":"/instances/0"}`, and `{"get":"script/drive","lines":[1,12]}`. Reference queries show both directions and the field or script line. List, outline, and reference queries accept `offset` and `limit` and return `next` when there are more results.
 
+Use `{"get":"room/main/instances/hero"}` to retrieve a placement by ID without reading its room. Group related lookups with `{"read":[{"get":"room/main/instances/hero"},{"refs":"object/pilot"}]}`. The response contains one `revision` and ordered `data` entries. A failed lookup occupies its position as `{ "error": "..." }`. Set `base` on the outer request to reject a stale snapshot. A batch accepts 16 queries and up to 2 MiB of output. Schema and session queries run separately.
+
 For scripts, `{"outline":"script/drive"}` returns event ranges as `[first_line,line_count]` and lists the instance variables, globals, and input actions used. Add `"symbol":"var/speed"` or another listed symbol to locate its reads and writes as `[line,access]` pairs. Use `{"get":"script/drive","event":"step"}` for the exact event text. Line numbers start at 1 inside the script.
 
 Function definitions appear in the outline as `fn/name`. Use `{"get":"script/motion","function":"axis"}` for one declaration or `{"outline":"script/motion","symbol":"fn/axis"}` for its signature and local uses. Use `{"refs":"script/motion/fn/axis"}` to find call sites in other scripts. Rename the script with the typed `rename` operation to update qualified calls.
 
-Use `{"schema":"edits"}` for valid forms of `put`, `patch`, `remove`, `rename`, `settings`, `script_event`, `splice`, `place`, `grid`, `camera`, `slice`, `atlas`, `fill`, and `stamp`. Query any resource kind or `project` or `replay` for its shape. `put` replaces a whole resource. `patch` changes top-level JSON fields, with `null` removing a field. `rename` updates typed references across rooms, objects, animations, project settings, and compiled script references. `fill` and `stamp` use tile coordinates, while `place` and `grid` use pixels.
+Use `{"schema":"edits"}` for the edit catalog or `{"schema":"edit/grid"}` for one form. Query any resource kind or `project` or `replay` for its shape. `put` replaces a whole resource. `patch` changes top-level JSON fields, with `null` removing a field. `rename` updates typed references across rooms, objects, animations, project settings, and compiled script references. `fill` and `stamp` use tile coordinates, while `place` and `grid` use pixels.
+
+`{"op":"placement","room":"main","id":"hero","to":"pilot","at":[48,32]}` renames and moves one placement and preserves a camera reference to it. Use `object` to retarget the placement or `remove:true` alone to delete it and clear its camera reference. Update any external replay selectors that use a renamed placement ID.
 
 Use `{"op":"script_event","id":"drive","event":"step","body":"  move 120 * dt, 0"}` to replace an event body or add an absent event to an existing script. An empty string keeps the header and clears the executable body. Explicit `null` removes the event. The body must omit event headers. The edit preserves the existing header and trailing comments outside the executable block.
 
@@ -58,13 +62,15 @@ The operation replaces the camera configuration. Omit `size` to keep the existin
 
 Use the query revision as `base` in edits and history operations when working alongside a person or another process. A batch validates against the final project and commits as a single history entry. Results list changed and removed IDs. A failed validation or stale revision leaves the source intact.
 
+Add `preview:true` to validate and return a proposed receipt without writing project source or history. Add `verify:[...]` to run up to four assertion-bearing replays on the candidate before committing, with at most 6,000 total ticks. The first failed replay stops verification and returns its report. With either option, `committed` records whether a change was written. If it is false, `revision` identifies the source read by the operation, and `changed` and `removed` describe the candidate. A failed verification uses exit code 1 or MCP `isError`.
+
 Use `{"session":"builder","advance":true}` to save the current resource manifest for a session. On a later connection, `{"session":"builder"}` returns changed and removed resource IDs relative to that checkpoint. Set `advance` again after processing the difference. Checkpoints follow source resources plus the bytes of referenced PNG and audio files. A media-only edit changes an `asset/path` entry while the source revision stays the same. Files that disappear or become unreadable also register a change while referenced. Query `{"refs":"asset/art/ship.png"}` to find the resources that use a file.
 
 Persist small structured project facts with `{"op":"put","key":"controls","value":{"fire":"Space"}}`. Read with `get` or remove with `remove`. Knowledge and checkpoints live beside the project in its local `.knowledge` sidecar.
 
 ## Verify behavior
 
-Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Assertions may sample tick 0 after create events. Fields are `room`, `particles`, `camera/x`, `camera/y`, `count/object_id`, `global/name`, and `entity/placement_id/property`. Properties include position, velocity, object ID, and the script's instance variables.
+Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Assertions and samples may read tick 0 after create events. Fields are `room`, `particles`, `camera/x`, `camera/y`, `grounded/placement_id`, `count/object_id`, `global/name`, and `entity/placement_id/property`. `grounded` returns `1` or `0`. Entity properties include position, velocity, object ID, and instance variables.
 
 ```json
 {
@@ -76,6 +82,8 @@ Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Asser
 ```
 
 Send `select` only when you need runtime state. Selected state includes the camera origin when it differs from `[0,0]`. Use `crop:[x,y,width,height]` in viewport coordinates when an image is needed. The renderer applies the current camera to world layers and lighting. HUD coordinates remain fixed on screen. MCP caps a crop at 512 pixels per edge. The CLI capture command takes an output path and caps a crop at 2048 pixels per edge. A fixed tick count, a fixed seed, and explicit inputs make replay the preferred entry point for automated tests.
+
+For smaller responses, use `sample:[[0,"entity/hero/x"],[12,"global/score"]]`. To read the same fields at several ticks, use `sample:{"at":[0,6,12],"fields":["entity/hero/x","entity/hero/y"]}`. Reports return just the values in request order, with fields grouped by tick in the grid form. A missing field value or a tick skipped after a fault returns `null`. Samples are observations. Add assertions to make a result fail when a value is wrong.
 
 
 

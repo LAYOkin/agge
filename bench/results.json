@@ -170,6 +170,48 @@
       "completed": true,
       "correct": true,
       "check": ""
+    },
+    {
+      "task": "bounce",
+      "engine": "agge",
+      "tokens": 84,
+      "message_tokens": [
+        22,
+        7,
+        29,
+        26
+      ],
+      "messages": [
+        "Make the ball rebound at full speed when it hits the wall. Preserve its initial position and rightward speed.",
+        "agge edit game.agge -",
+        "{\"ops\":[{\"op\":\"script_event\",\"id\":\"ball\",\"event\":\"hit_x\",\"body\":\"  set vx = -impact()\"}]}",
+        "{\"changed\":[\"script/ball\"],\"revision\":\"-6L5xu8wBlyFe19lTBixCg\"}"
+      ],
+      "completed": true,
+      "correct": true,
+      "check": "{\"passed\":true,\"report\":{\"assertions\":9,\"ticks\":2},\"revision\":\"-6L5xu8wBlyFe19lTBixCg\"}"
+    },
+    {
+      "task": "bounce",
+      "engine": "godot",
+      "tokens": 129,
+      "message_tokens": [
+        22,
+        3,
+        101,
+        3,
+        0
+      ],
+      "messages": [
+        "Make the ball rebound at full speed when it hits the wall. Preserve its initial position and rightward speed.",
+        "write edit.py",
+        "from pathlib import Path\n\npath = Path(\"ball.gd\")\nsource = path.read_text()\nbefore = \"if move_and_collide(velocity * delta, false, 0):\\n        velocity = Vector2.ZERO\"\nafter = \"var hit = move_and_collide(velocity * delta, false, 0)\\n    if hit:\\n        velocity = velocity.bounce(hit.get_normal())\"\nassert source.count(before) == 1\npath.write_text(source.replace(before, after))\n",
+        "python edit.py",
+        ""
+      ],
+      "completed": true,
+      "correct": true,
+      "check": ""
     }
   ]
 }

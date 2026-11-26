@@ -19,6 +19,7 @@ struct Context<'a> {
     script: &'a str,
     program: &'a Program,
     parameters: &'a [f32],
+    impact: f32,
 }
 
 struct ScriptError {
@@ -61,6 +62,7 @@ impl World {
         index: &Index,
         entity: &mut Entity,
         event: Event,
+        impact: f32,
     ) -> Result<(), Fault> {
         let Some((script, program)) = self
             .object(&entity.object)
@@ -78,6 +80,7 @@ impl World {
             script,
             program,
             parameters: &[],
+            impact,
         };
         self.exec(entity, context, code).map_err(|mut error| {
             error.stack.reverse();
@@ -247,6 +250,7 @@ impl World {
                 }))
             }
             Expr::Grounded => flag(self.grounded(e)),
+            Expr::Impact => context.impact,
             Expr::Blocked(x, y) => {
                 let x = bounded(self.eval(e, context, x, depth)?)?;
                 let y = bounded(self.eval(e, context, y, depth)?)?;
@@ -300,6 +304,7 @@ impl World {
                     script,
                     program,
                     parameters: &parameters,
+                    impact: context.impact,
                 };
                 return self
                     .eval(e, callee, &function.expression, depth)

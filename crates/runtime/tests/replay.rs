@@ -1,11 +1,11 @@
 use agge_core::Project;
-use agge_runtime::{Media, Replay, capture, replay};
+use agge_runtime::{Input, Media, Replay, ReplayRecorder, Scalar, capture, replay};
 use std::path::Path;
 
 #[test]
 fn bundled_games_are_playable_and_repeatable() {
     let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
-    for game in ["orbit", "paddle", "relay", "switchback"] {
+    for game in ["orbit", "paddle", "relay", "switchback", "bankshot"] {
         let root = examples.join(game);
         let project =
             Project::parse(&std::fs::read_to_string(root.join("game.agge")).unwrap()).unwrap();
@@ -24,6 +24,90 @@ fn bundled_games_are_playable_and_repeatable() {
         let decoded = image::load_from_memory(&crop).unwrap();
         assert_eq!((decoded.width(), decoded.height()), (64, 48));
     }
+}
+
+#[test]
+fn impact_handlers_receive_signed_speed_in_axis_order() {
+    let project = Project::parse(
+        r#"agge/1 {"start":"test","hz":64}
+room test {"instances":[["hero","hero",0,0],["wall","wall",12,0],["floor","floor",0,12]]}
+object hero {"size":[8,8],"script":"drive"}
+object wall {"size":[8,12],"solid":true}
+object floor {"size":[12,8],"solid":true}
+script drive
+fn rebound() = -impact()
+create:
+  set vx = 320
+  set vy = 320
+hit_x:
+  global order = 1
+  set vx = rebound()
+hit_y:
+  global order = global(order) * 10 + 2
+  set vy = rebound()
+---
+"#,
+    )
+    .unwrap();
+    let spec: Replay = serde_json::from_str(
+        r#"{"ticks":2,"sample":[[2,"entity/hero/x"],
+        [1,"entity/hero/vx"],[0,"entity/hero/vy"],[1,"global/order"],[2,"entity/missing/x"]]}"#,
+    )
+    .unwrap();
+    let (_, report) = replay(project, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+    assert_eq!(
+        report.samples,
+        vec![
+            Some(Scalar::Number(-1.)),
+            Some(Scalar::Number(-320.)),
+            Some(Scalar::Number(320.)),
+            Some(Scalar::Number(12.)),
+            None
+        ]
+    );
+}
+
+#[test]
+fn recorded_input_spans_round_trip_and_replay() {
+    let project = Project::parse(
+        r#"agge/1 {"start":"test"}
+room test {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+script drive
+step:
+  move down("right"), down("down")
+  global presses = global(presses) + pressed("right")
+---
+"#,
+    )
+    .unwrap();
+    let mut recorder = ReplayRecorder::new("test");
+    for keys in [
+        &["right"][..],
+        &["right", "down"],
+        &["down"],
+        &[],
+        &["right"],
+    ] {
+        let input: Input = keys.iter().map(|key| (*key).into()).collect();
+        recorder.record(&input);
+    }
+    let mut spec = serde_json::to_value(recorder.replay()).unwrap();
+    assert_eq!(
+        spec["input"],
+        serde_json::json!([[1, 2, "right"], [2, 3, "down"], [5, 5, "right"]])
+    );
+    spec["sample"] = serde_json::json!([
+        [5, "entity/hero/x"],
+        [5, "entity/hero/y"],
+        [5, "global/presses"]
+    ]);
+    let (_, report) = replay(project, &serde_json::from_value(spec).unwrap()).unwrap();
+    assert_eq!(
+        report.samples,
+        [3., 2., 2.].map(|n| Some(Scalar::Number(n)))
+    );
 }
 
 #[test]

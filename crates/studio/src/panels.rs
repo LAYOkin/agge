@@ -70,6 +70,11 @@ impl Default for Tools {
     }
 }
 impl Tools {
+    pub fn select_placement(&mut self, id: &str) {
+        self.selected = Some(id.into());
+        self.place.clear();
+    }
+
     pub fn refresh_media(&mut self) {
         self.media_key = None;
         self.map_texture = None;
@@ -223,8 +228,7 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
                             )
                             .clicked()
                         {
-                            tools.selected = Some(i.0.clone());
-                            tools.place.clear();
+                            tools.select_placement(&i.0);
                         }
                     }
                 });

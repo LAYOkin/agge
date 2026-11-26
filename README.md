@@ -6,11 +6,11 @@
 
 AGGE is designed to minimize the tokens a coding agent needs to build, change, and verify a game. The principle applies throughout the engine. Whenever AGGE can do a job deterministically, it should do that work itself so the agent can focus on game design and behavior.
 
-- **Read only what the change needs.** Compact, Git-friendly project files and an indexed resource graph let agents request a single field, a script event, or a symbol's references. Named checkpoints report which resources changed between sessions.
-- **Describe edits at the level of intent.** A grid placement, tile stamp, or typed rename can replace pages of generated data or repeated edits. The engine resolves references, validates the batch, and records one undoable transaction. Concise scripts use engine primitives for game logic such as input and collision.
-- **Verify with the game runtime.** Fixed-tick replays run the same simulation as the desktop player. Assertions check specific gameplay outcomes, and agents can request selected runtime values or a small PNG crop when they need more detail.
+- **Read only what the change needs.** Compact, Git-friendly project files and an indexed resource graph let agents request a single field, placement, script event, or symbol reference. Batch related reads at one revision, and use a named checkpoint to retrieve changes between sessions.
+- **Describe edits at the level of intent.** A grid placement, tile stamp, or typed rename can replace pages of generated data or repeated edits. Edits support previews and replay checks before committing one undoable transaction. Concise scripts use engine primitives for game logic such as input and collision.
+- **Verify with the game runtime.** Studio copies playtests as replay JSON. Agents can assert specific outcomes, sample selected values across ticks, or request a small PNG crop.
 
-AGGE targets **80–90% fewer tokens on suitable tasks**. Four scripted edit workflows measured **7.9–59.5% lower token counts** against equivalent Godot workflows, and both engines passed the correctness checks in all four cases. End-to-end model-session savings are still unverified. [Benchmark results and reproduction steps](bench/README.md)
+AGGE targets **80–90% fewer tokens on suitable tasks**. Five scripted edit workflows measured **7.9–59.5% lower token counts** against equivalent Godot workflows. On the Bank Shot fixture, samples across six ticks used **78.7% fewer tokens** than six state snapshots, and retrieving a single edit form used **89.1% fewer tokens** than retrieving the full catalog. End-to-end model-session savings are still unverified. [Benchmark results and reproduction steps](bench/README.md)
 
 ## Play or edit a game
 
@@ -20,10 +20,18 @@ Install Rust 1.89 or newer. On Linux, install ALSA and the development libraries
 cargo build --workspace --release --locked
 cargo run -p agge-studio --bin agge-studio -- examples/orbit/game.agge
 cargo run -p agge-studio --bin agge-player -- examples/paddle/game.agge
-cargo run -p agge -- test examples/relay/game.agge @examples/relay/replay.json
+cargo run -p agge -- test examples/bankshot/game.agge @examples/bankshot/replay.json
 ```
 
-In **Signal Runner**, use the arrows or WASD to collect three power cells and avoid the patrol. In **Rail Paddle**, use left and right to keep the ball in play. In **Relay Courier**, steer around the barriers, collect three relays, and reach the gate in a scrolling room. All three games include reproducible input and gameplay assertions.
+| Example | Play and explore |
+| --- | --- |
+| [Signal Runner](examples/orbit) | Collect power cells, avoid a patrol, and explore sprite atlases, lighting, and sound. |
+| [Rail Paddle](examples/paddle) | Keep the ball in play with a paddle and build up your hit count. |
+| [Relay Courier](examples/relay) | Navigate barriers and reach the gate in a scrolling room. |
+| [Switchback](examples/switchback) | Jump through one-way platforms, collect two chips, and restore the lift. |
+| [Bank Shot](examples/bankshot) | Aim with the arrows, launch with Space, and rebound into three relays within three shots. Reset with R. |
+
+![Bank Shot playfield with three relays and launch controls](examples/bankshot/preview.png)
 
 ## Learn AGGE
 
@@ -32,6 +40,7 @@ In **Signal Runner**, use the arrows or WASD to collect three power cells and av
 - [Agent interface](docs/agents.md) documents MCP setup, revision checks, operations, checkpoints, and selective inspection.
 - [Architecture](docs/architecture.md) describes crate boundaries, determinism, and the current limits.
 - [Benchmarks](bench/README.md) record measured workflow token counts and describe how to collect model-session usage.
+- [Contributing](CONTRIBUTING.md) covers development checks, fixtures, and benchmark evidence.
 
 ## Current release scope
 

@@ -120,7 +120,17 @@ impl Store {
         })
     }
     pub fn transact(&self, base: Option<&str>, ops: Vec<Edit>) -> Result<Receipt> {
-        self.update(base, move |project| {
+        self.transact_checked(base, ops, false, |_| Ok(true))
+            .map(|(receipt, _)| receipt)
+    }
+    pub fn transact_checked(
+        &self,
+        base: Option<&str>,
+        ops: Vec<Edit>,
+        preview: bool,
+        verify: impl FnOnce(&Project) -> Result<bool>,
+    ) -> Result<(Receipt, bool)> {
+        self.update_checked(base, preview, verify, move |project| {
             for (i, op) in ops.into_iter().enumerate() {
                 op.apply(project)
                     .map_err(|e| fail(format!("op {}: {e}", i + 1)))?;
@@ -133,27 +143,42 @@ impl Store {
         base: Option<&str>,
         edit: impl FnOnce(&mut Project) -> Result<()>,
     ) -> Result<Receipt> {
+        self.update_checked(base, false, |_| Ok(true), edit)
+            .map(|(receipt, _)| receipt)
+    }
+    fn update_checked(
+        &self,
+        base: Option<&str>,
+        preview: bool,
+        verify: impl FnOnce(&Project) -> Result<bool>,
+        edit: impl FnOnce(&mut Project) -> Result<()>,
+    ) -> Result<(Receipt, bool)> {
         let _lock = self.lock()?;
         let source = self.source()?;
         let revision = check_base(&source, base)?;
         let mut project = Project::parse(&source)?;
         let old = Index::manifest(&project);
         edit(&mut project)?;
+        let next = project.encode();
+        if next.len() > PROJECT_LIMIT {
+            return Err(fail("project exceeds 2 MiB"));
+        }
         let new = Index::build(&project);
         new.require_valid()?;
-        let next = project.encode();
         let mut receipt = receipt(&old, &new, &next);
-        if old == new.symbols {
+        let passed = verify(&project)?;
+        if preview || !passed || old == new.symbols {
             receipt.revision = revision;
-            return Ok(receipt);
+            return Ok((receipt, passed));
         }
+        check_base(&self.source()?, Some(&revision))?;
         let before = self.history(revision)?;
         let mut after = before.clone();
         after.revision = receipt.revision.clone();
         push(&mut after.undo, source);
         after.redo.clear();
         self.commit(before, after, &next)?;
-        Ok(receipt)
+        Ok((receipt, passed))
     }
     pub fn travel(&self, base: Option<&str>, redo: bool) -> Result<Receipt> {
         let _lock = self.lock()?;

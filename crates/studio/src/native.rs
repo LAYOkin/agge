@@ -1,7 +1,7 @@
 use agge_core::{
     Color, Kind, Light, Project, Resource, Result, Tilemap, fail, read_asset, store::Store,
 };
-use agge_runtime::{Bounds, Draw, Input, Media, World, draw_tilemap, shade_lights};
+use agge_runtime::{Bounds, Draw, Input, Media, ReplayRecorder, World, draw_tilemap, shade_lights};
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, TextureHandle, TextureOptions, Ui,
     Vec2,
@@ -10,6 +10,7 @@ use std::{
     collections::BTreeMap,
     io::Cursor,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -73,6 +74,7 @@ pub struct Play {
     pub media: Media,
     pub paused: bool,
     pub audio: AudioOutput,
+    pub recording: Option<ReplayRecorder>,
     root: PathBuf,
     last: Instant,
     elapsed: f64,
@@ -87,6 +89,7 @@ impl Play {
             media,
             paused: false,
             audio: AudioOutput::default(),
+            recording: None,
             root,
             last: Instant::now(),
             elapsed: 0.,
@@ -112,6 +115,9 @@ impl Play {
         }
     }
     fn advance(&mut self, input: &Input) {
+        if let Some(recording) = &mut self.recording {
+            recording.record(input);
+        }
         if self.world.tick(input).is_ok() {
             self.audio();
         }
@@ -152,7 +158,7 @@ impl Play {
 #[derive(Default)]
 pub struct AudioOutput {
     stream: Option<rodio::OutputStream>,
-    clips: BTreeMap<String, Vec<u8>>,
+    clips: BTreeMap<String, Arc<[u8]>>,
     playing: Vec<rodio::Sink>,
     pub error: Option<String>,
 }
@@ -171,7 +177,8 @@ impl AudioOutput {
             self.stream = Some(rodio::OutputStreamBuilder::open_default_stream()?);
         }
         if !self.clips.contains_key(file) {
-            self.clips.insert(file.into(), read_asset(root, file)?);
+            self.clips
+                .insert(file.into(), read_asset(root, file)?.into());
         }
         let bytes = self.clips.get(file).expect("loaded audio");
         let source = rodio::Decoder::new(Cursor::new(bytes.clone()))?;

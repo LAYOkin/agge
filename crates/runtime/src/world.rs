@@ -370,23 +370,36 @@ impl World {
                 .entities
                 .remove(&id)
                 .expect("only current entity is removed");
-            if let Err(fault) = self.run(&index, &mut entity, Event::Step) {
+            if let Err(fault) = self.run(&index, &mut entity, Event::Step, 0.) {
                 self.keep_entity(entity);
                 return Err(fault);
             }
             if !entity.dead {
                 let gravity = self.object(&entity.object).gravity;
                 entity.vy = (entity.vy + gravity * dt).clamp(-1_000_000., 1_000_000.);
-                let [dx, dy] = [entity.vx * dt, entity.vy * dt];
-                if self.motion(&mut entity, 0, dx) {
+                let [vx, vy] = [entity.vx, entity.vy];
+                let hit_x = self.motion(&mut entity, 0, vx * dt);
+                let hit_y = self.motion(&mut entity, 1, vy * dt);
+                if hit_x {
                     entity.vx = 0.;
                 }
-                if self.motion(&mut entity, 1, dy) {
+                if hit_y {
                     entity.vy = 0.;
                 }
-                self.keep_entity(entity);
-            } else {
+                for (hit, event, impact) in [(hit_x, Event::HitX, vx), (hit_y, Event::HitY, vy)] {
+                    if hit
+                        && !entity.dead
+                        && let Err(fault) = self.run(&index, &mut entity, event, impact)
+                    {
+                        self.keep_entity(entity);
+                        return Err(fault);
+                    }
+                }
+            }
+            if entity.dead {
                 self.unregister(&entity);
+            } else {
+                self.keep_entity(entity);
             }
         }
         self.spawn_queued()?;
@@ -461,7 +474,7 @@ impl World {
             }
             for id in first..self.next_id {
                 let mut entity = self.entities.remove(&id).expect("queued entity exists");
-                if let Err(fault) = self.run(&index, &mut entity, Event::Create) {
+                if let Err(fault) = self.run(&index, &mut entity, Event::Create, 0.) {
                     self.keep_entity(entity);
                     return Err(fault);
                 }

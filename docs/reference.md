@@ -19,7 +19,7 @@ IDs match `[a-z][a-z0-9_]{0,47}`. Resource IDs are scoped by kind. Room placemen
 | Kind | Data |
 | --- | --- |
 | `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `maps`, `lights` with `at/radius/color`, `darkness` from 0 to 1, and `ui` labels |
-| `object` | `size`, RGBA `color`, `shape` (`rect` or `circle`), optional `sprite` or `animation`, optional `script`, `solid`, `hidden`, and `gravity` |
+| `object` | `size`, RGBA `color`, `shape` (`rect` or `circle`), optional `sprite` or `animation`, optional `script`, `solid`, `one_way`, `hidden`, and `gravity` |
 | `sprite` | Project-relative PNG `file` and optional frame rectangles `[x,y,width,height]`; an empty frame list means the entire image |
 | `animation` | Sprite ID, zero-based `frames`, and `fps` |
 | `tilemap` | Pixel `cell` size, optional pixel offset `at`, optional `atlas` sprite, palette `tiles`, and equal-width ASCII `rows`. A dot marks an empty tile |
@@ -49,7 +49,7 @@ tilemap floor {"cell":16,"atlas":"terrain","tiles":{"#":[0,true],"+":[1],"w":[[3
 
 ## Script
 
-A script defines at most one `create:` and one `step:` block. Create runs once per instance. Step runs once per simulation tick. Indentation is for readability. A `#` outside a quoted string starts a comment.
+A script may define one block each for `create:`, `step:`, `hit_x:`, and `hit_y:`. Create runs once per instance. Step runs once per simulation tick. The hit handlers run when velocity-driven movement is clipped along their axis. Indentation is for readability. A `#` outside a quoted string starts a comment.
 
 ```text
 create:
@@ -101,5 +101,14 @@ step:
 Each function accepts up to eight numeric parameters. Functions read engine variables, global values, input actions, and collision queries. Pass an instance variable through a parameter to use it in a helper. Arguments are evaluated left to right and the helper evaluates in its declaring script. `choose(test, yes, no)` evaluates only the selected branch, so it can guard a division or a recursive call. The runtime applies its expression nesting limit and tick instruction budget inside functions.
 
 At each tick, entities run in increasing ID order. After an entity's step, gravity updates vertical velocity and the runtime sweeps its velocity through solid tiles and instances on each axis. An axis blocked by a solid has its velocity reset. Assigning X or Y directly teleports the collider. Step spawns run after the current entities step. The first requested room transition then takes effect at the end of the tick. Globals and runtime IDs persist across rooms. Particles are cleared on entry to a new room.
+
+`grounded()` returns `1` when the instance is stationary or descending vertically and a quarter-pixel downward sweep is blocked. `blocked(dx,dy)` tests a displacement against the same collision rules without changing position. Set `one_way:true` on objects that should block only downward movement crossing their top. An object can use `solid` or `one_way`. Overlap tests through `touch` apply to both.
+
+The runtime resolves both velocity sweeps before running `hit_x` and then `hit_y`. `impact()` returns the signed pre-clamp velocity for the current hit event and `0` in other events. Event code can change velocity for the next tick. Gravity can cause a vertical hit on successive ticks when an instance rests on a floor. Explicit `move` uses collision sweeps without emitting hit events. Bank Shot uses this pattern to rebound and keep its full horizontal speed.
+
+```text
+hit_x:
+  set vx = -impact()
+```
 
 

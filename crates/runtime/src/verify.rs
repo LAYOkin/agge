@@ -3,22 +3,118 @@ use agge_core::{Project, Result, fail, valid_id};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Deserialize)]
+const TICK_LIMIT: u32 = 60_000;
+const SPAN_LIMIT: usize = 4096;
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct InputSpan(pub u32, pub u32, pub String);
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Replay {
     pub ticks: u32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub room: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<InputSpan>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expect: Vec<Assertion>,
+    #[serde(default, skip_serializing_if = "Samples::is_empty")]
+    pub sample: Samples,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Sample(pub u32, pub String);
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum Samples {
+    Points(Vec<Sample>),
+    Grid { at: Vec<u32>, fields: Vec<String> },
+}
+
+impl Default for Samples {
+    fn default() -> Self {
+        Self::Points(vec![])
+    }
+}
+
+impl Samples {
+    fn len(&self) -> usize {
+        match self {
+            Self::Points(points) => points.len(),
+            Self::Grid { at, fields } => at.len().saturating_mul(fields.len()),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn points(&self) -> Vec<(u32, &str)> {
+        match self {
+            Self::Points(points) => points.iter().map(|s| (s.0, s.1.as_str())).collect(),
+            Self::Grid { at, fields } => at
+                .iter()
+                .flat_map(|&tick| fields.iter().map(move |field| (tick, field.as_str())))
+                .collect(),
+        }
+    }
+}
+
+pub struct ReplayRecorder {
+    spec: Replay,
+    held: BTreeMap<String, usize>,
+    pub full: bool,
+}
+
+impl ReplayRecorder {
+    pub fn new(room: &str) -> Self {
+        Self {
+            spec: Replay {
+                ticks: 0,
+                room: Some(room.into()),
+                input: vec![],
+                expect: vec![],
+                sample: Samples::default(),
+            },
+            held: BTreeMap::new(),
+            full: false,
+        }
+    }
+
+    pub fn record(&mut self, input: &Input) {
+        if self.full {
+            return;
+        }
+        self.held.retain(|key, _| input.contains(key));
+        let added = input.len() - self.held.len();
+        if self.spec.ticks == TICK_LIMIT || self.spec.input.len() + added > SPAN_LIMIT {
+            self.full = true;
+            return;
+        }
+        self.spec.ticks += 1;
+        for key in input {
+            let span = if let Some(&span) = self.held.get(key) {
+                span
+            } else {
+                let index = self.spec.input.len();
+                self.spec
+                    .input
+                    .push(InputSpan(self.spec.ticks, self.spec.ticks, key.clone()));
+                self.held.insert(key.clone(), index);
+                index
+            };
+            self.spec.input[span].1 = self.spec.ticks;
+        }
+    }
+
+    pub fn replay(&self) -> &Replay {
+        &self.spec
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Assertion {
     pub at: u32,
@@ -46,6 +142,8 @@ pub struct Report {
     pub ticks: u64,
     pub assertions: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub samples: Vec<Option<Scalar>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub failures: Vec<Failure>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fault: Option<Fault>,
@@ -57,9 +155,10 @@ impl Report {
 }
 
 pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
-    if spec.ticks > 60_000
-        || spec.input.len() > 4096
+    if spec.ticks > TICK_LIMIT
+        || spec.input.len() > SPAN_LIMIT
         || spec.expect.len() > 4096
+        || spec.sample.len() > 256
         || spec
             .input
             .iter()
@@ -71,10 +170,20 @@ pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
     {
         return Err(fail("invalid replay ticks, input ranges or assertions"));
     }
+    let mut samples = spec
+        .sample
+        .points()
+        .into_iter()
+        .enumerate()
+        .collect::<Vec<_>>();
+    if samples.iter().any(|(_, (tick, _))| *tick > spec.ticks) {
+        return Err(fail("sample tick exceeds replay length"));
+    }
     let mut world = World::preview(project, spec.room.as_deref())?;
     let mut report = Report {
         ticks: 0,
         assertions: 0,
+        samples: vec![None; spec.sample.len()],
         failures: vec![],
         fault: world.fault().cloned(),
     };
@@ -84,6 +193,8 @@ pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
     let mut assertions = spec.expect.iter().collect::<Vec<_>>();
     assertions.sort_by_key(|a| a.at);
     let mut assertions = assertions.into_iter().peekable();
+    samples.sort_unstable_by_key(|(_, (tick, _))| *tick);
+    let mut samples = samples.into_iter().peekable();
     let mut changes = spec
         .input
         .iter()
@@ -135,6 +246,9 @@ pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
                     actual,
                 });
             }
+        }
+        while let Some((position, (_, field))) = samples.next_if(|(_, (tick, _))| *tick == time) {
+            report.samples[position] = read(&world, field);
         }
     }
     Ok((world, report))

@@ -1,0 +1,95 @@
+{
+  "encoding": "o200k_base",
+  "workflows": [
+    {
+      "workflow": "six queries",
+      "calls": 6,
+      "tokens": 420,
+      "messages": [
+        "agge query game.agge -",
+        "{\"get\":\"room/table\",\"path\":\"/maps\"}",
+        "{\"data\":[\"table\"],\"id\":\"room/table\",\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}",
+        "agge query game.agge -",
+        "{\"get\":\"object/ball\",\"path\":\"/script\"}",
+        "{\"data\":\"ball\",\"id\":\"object/ball\",\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}",
+        "agge query game.agge -",
+        "{\"get\":\"script/ball\",\"event\":\"hit_x\"}",
+        "{\"data\":\"hit_x:\\n  set vx = -impact()\\n  emit spark\",\"id\":\"script/ball\",\"lines\":[24,3],\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}",
+        "agge query game.agge -",
+        "{\"get\":\"script/ball\",\"event\":\"hit_y\"}",
+        "{\"data\":\"hit_y:\\n  set vy = -impact()\\n  emit spark\",\"id\":\"script/ball\",\"lines\":[27,3],\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}",
+        "agge query game.agge -",
+        "{\"refs\":\"object/ball\"}",
+        "{\"items\":[{\"at\":\"instances/ball\",\"from\":\"room/table\",\"to\":\"object/ball\"},{\"at\":\"script\",\"from\":\"object/ball\",\"to\":\"script/ball\"},{\"at\":\"line/2\",\"from\":\"script/relay\",\"to\":\"object/ball\"}],\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}",
+        "agge query game.agge -",
+        "{\"refs\":\"script/ball\"}",
+        "{\"items\":[{\"at\":\"script\",\"from\":\"object/ball\",\"to\":\"script/ball\"},{\"at\":\"line/26\",\"from\":\"script/ball\",\"to\":\"particle/spark\"},{\"at\":\"line/29\",\"from\":\"script/ball\",\"to\":\"particle/spark\"}],\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}"
+      ]
+    },
+    {
+      "workflow": "batched reads",
+      "calls": 1,
+      "tokens": 286,
+      "messages": [
+        "agge query game.agge -",
+        "{\"read\":[{\"get\":\"room/table\",\"path\":\"/maps\"},{\"get\":\"object/ball\",\"path\":\"/script\"},{\"get\":\"script/ball\",\"event\":\"hit_x\"},{\"get\":\"script/ball\",\"event\":\"hit_y\"},{\"refs\":\"object/ball\"},{\"refs\":\"script/ball\"}]}",
+        "{\"data\":[{\"data\":[\"table\"],\"id\":\"room/table\"},{\"data\":\"ball\",\"id\":\"object/ball\"},{\"data\":\"hit_x:\\n  set vx = -impact()\\n  emit spark\",\"id\":\"script/ball\",\"lines\":[24,3]},{\"data\":\"hit_y:\\n  set vy = -impact()\\n  emit spark\",\"id\":\"script/ball\",\"lines\":[27,3]},{\"items\":[{\"at\":\"instances/ball\",\"from\":\"room/table\",\"to\":\"object/ball\"},{\"at\":\"script\",\"from\":\"object/ball\",\"to\":\"script/ball\"},{\"at\":\"line/2\",\"from\":\"script/relay\",\"to\":\"object/ball\"}]},{\"items\":[{\"at\":\"script\",\"from\":\"object/ball\",\"to\":\"script/ball\"},{\"at\":\"line/26\",\"from\":\"script/ball\",\"to\":\"particle/spark\"},{\"at\":\"line/29\",\"from\":\"script/ball\",\"to\":\"particle/spark\"}]}],\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}"
+      ]
+    },
+    {
+      "workflow": "six replay snapshots",
+      "calls": 6,
+      "tokens": 923,
+      "messages": [
+        "agge inspect game.agge -",
+        "{\"ticks\":1,\"input\":[[1,1,\"fire\"]],\"select\":{\"placement\":\"ball\"}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"ticks\":1},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\",\"state\":{\"entities\":[{\"id\":1,\"object\":\"ball\",\"placement\":\"ball\",\"vars\":{\"age\":150.0,\"aim\":180.0},\"vx\":180.0,\"vy\":-180.0,\"x\":63.0,\"y\":141.0}],\"globals\":{\"aim\":180.0,\"relays\":0.0,\"shots\":1.0},\"particles\":0,\"room\":\"table\",\"tick\":1}}",
+        "agge inspect game.agge -",
+        "{\"ticks\":30,\"input\":[[1,1,\"fire\"]],\"select\":{\"placement\":\"ball\"}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"ticks\":30},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\",\"state\":{\"entities\":[{\"id\":1,\"object\":\"ball\",\"placement\":\"ball\",\"vars\":{\"age\":121.0,\"aim\":180.0},\"vx\":180.0,\"vy\":-180.0,\"x\":150.0,\"y\":54.0}],\"globals\":{\"aim\":180.0,\"relays\":1.0,\"shots\":1.0},\"particles\":25,\"room\":\"table\",\"tick\":30}}",
+        "agge inspect game.agge -",
+        "{\"ticks\":43,\"input\":[[1,1,\"fire\"]],\"select\":{\"placement\":\"ball\"}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"ticks\":43},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\",\"state\":{\"entities\":[{\"id\":1,\"object\":\"ball\",\"placement\":\"ball\",\"vars\":{\"age\":108.0,\"aim\":180.0},\"vx\":180.0,\"vy\":180.0,\"x\":189.0,\"y\":16.0}],\"globals\":{\"aim\":180.0,\"relays\":1.0,\"shots\":1.0},\"particles\":34,\"room\":\"table\",\"tick\":43}}",
+        "agge inspect game.agge -",
+        "{\"ticks\":56,\"input\":[[1,1,\"fire\"]],\"select\":{\"placement\":\"ball\"}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"ticks\":56},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\",\"state\":{\"entities\":[{\"id\":1,\"object\":\"ball\",\"placement\":\"ball\",\"vars\":{\"age\":95.0,\"aim\":180.0},\"vx\":180.0,\"vy\":180.0,\"x\":228.0,\"y\":55.0}],\"globals\":{\"aim\":180.0,\"relays\":2.0,\"shots\":1.0},\"particles\":34,\"room\":\"table\",\"tick\":56}}",
+        "agge inspect game.agge -",
+        "{\"ticks\":79,\"input\":[[1,1,\"fire\"]],\"select\":{\"placement\":\"ball\"}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"ticks\":79},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\",\"state\":{\"entities\":[{\"id\":1,\"object\":\"ball\",\"placement\":\"ball\",\"vars\":{\"age\":72.0,\"aim\":180.0},\"vx\":-180.0,\"vy\":180.0,\"x\":296.0,\"y\":124.0}],\"globals\":{\"aim\":180.0,\"relays\":2.0,\"shots\":1.0},\"particles\":34,\"room\":\"table\",\"tick\":79}}",
+        "agge inspect game.agge -",
+        "{\"ticks\":95,\"input\":[[1,1,\"fire\"]],\"select\":{\"placement\":\"ball\"}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"ticks\":95},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\",\"state\":{\"entities\":[{\"id\":1,\"object\":\"ball\",\"placement\":\"ball\",\"vars\":{\"age\":56.0,\"aim\":180.0},\"vx\":-180.0,\"vy\":-180.0,\"x\":248.0,\"y\":165.0}],\"globals\":{\"aim\":180.0,\"relays\":3.0,\"shots\":1.0},\"particles\":34,\"room\":\"table\",\"tick\":95}}"
+      ]
+    },
+    {
+      "workflow": "one sampled replay",
+      "calls": 1,
+      "tokens": 197,
+      "messages": [
+        "agge test game.agge -",
+        "{\"ticks\":95,\"input\":[[1,1,\"fire\"]],\"sample\":{\"at\":[1,30,43,56,79,95],\"fields\":[\"entity/ball/x\",\"entity/ball/y\",\"entity/ball/vx\",\"entity/ball/vy\"]}}",
+        "{\"passed\":true,\"report\":{\"assertions\":0,\"samples\":[63.0,141.0,180.0,-180.0,150.0,54.0,180.0,-180.0,189.0,16.0,180.0,180.0,228.0,55.0,180.0,180.0,296.0,124.0,-180.0,180.0,248.0,165.0,-180.0,-180.0],\"ticks\":95},\"revision\":\"LpQoYWdOkl2cWkEQQlQzqg\"}"
+      ]
+    },
+    {
+      "workflow": "all edit forms",
+      "calls": 1,
+      "tokens": 338,
+      "messages": [
+        "agge query game.agge -",
+        "{\"schema\":\"edits\"}",
+        "[{\"data\":{\"size\":[20,20]},\"id\":\"player\",\"kind\":\"object\",\"op\":\"put\"},{\"fields\":{\"gravity\":480},\"id\":\"player\",\"kind\":\"object\",\"op\":\"patch\"},{\"id\":\"player\",\"kind\":\"object\",\"op\":\"remove\"},{\"id\":\"player\",\"kind\":\"object\",\"op\":\"rename\",\"to\":\"pilot\"},{\"fields\":{\"hz\":60},\"op\":\"settings\"},{\"body\":\"  move 120 * dt, 0\",\"event\":\"step\",\"id\":\"drive\",\"op\":\"script_event\"},{\"at\":[3,1],\"id\":\"drive\",\"op\":\"splice\",\"text\":\"  move 180 * dt, 0\"},{\"at\":[32,48],\"id\":\"hero\",\"object\":\"player\",\"op\":\"place\",\"room\":\"main\"},{\"at\":[48,48],\"id\":\"hero\",\"op\":\"placement\",\"room\":\"main\",\"to\":\"pilot\"},{\"at\":[0,0],\"object\":\"player\",\"op\":\"grid\",\"prefix\":\"row\",\"room\":\"main\",\"size\":[5,2],\"step\":[32,32]},{\"dead\":[80,40],\"follow\":\"hero\",\"op\":\"camera\",\"room\":\"main\",\"size\":[1280,720],\"smooth\":12},{\"cell\":[16,16],\"grid\":[4,2],\"id\":\"terrain\",\"op\":\"slice\"},{\"keys\":\"abcd\",\"map\":\"layout\",\"op\":\"atlas\",\"solid\":\"ab\",\"sprite\":\"terrain\"},{\"area\":[0,0,8,8],\"border\":true,\"map\":\"layout\",\"op\":\"fill\",\"tile\":\"#\"},{\"at\":[1,1],\"map\":\"layout\",\"op\":\"stamp\",\"rows\":[\".#\",\"#.\"]}]"
+      ]
+    },
+    {
+      "workflow": "one edit form",
+      "calls": 1,
+      "tokens": 37,
+      "messages": [
+        "agge query game.agge -",
+        "{\"schema\":\"edit/placement\"}",
+        "{\"at\":[48,48],\"id\":\"hero\",\"op\":\"placement\",\"room\":\"main\",\"to\":\"pilot\"}"
+      ]
+    }
+  ]
+}

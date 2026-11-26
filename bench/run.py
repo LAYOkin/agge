@@ -8,12 +8,13 @@ from pathlib import Path
 import tiktoken
 
 import atlas_case
+import bounce_case
 
 
 GRID = "Place a 12×8 grid of cells in arena at (24,32), spaced (32,24). Name them cell_x_y."
 RENAME = "Rename arena to vault. Preserve startup and the return transition from return_room."
 SPRINT = "Update drive so holding fire doubles horizontal movement. Keep vertical speed and the starting shield unchanged."
-TASKS = {"grid": GRID, "rename": RENAME, "sprint": SPRINT, "atlas": atlas_case.PROMPT}
+TASKS = {"grid": GRID, "rename": RENAME, "sprint": SPRINT, "atlas": atlas_case.PROMPT, "bounce": bounce_case.PROMPT}
 AGGE_AXES = [
     '  set dx = (down("right") - down("left")) * 120 * dt',
     '  set dy = (down("down") - down("up")) * 120 * dt',
@@ -140,7 +141,7 @@ func verify() -> void:
     arena.free()
     quit(0 if good else 1)
 '''
-GODOT_CHECKS = {"grid": GODOT_GRID_CHECK, "rename": GODOT_RENAME_CHECK, "sprint": GODOT_SPRINT_CHECK, "atlas": atlas_case.GODOT_CHECK}
+GODOT_CHECKS = {"grid": GODOT_GRID_CHECK, "rename": GODOT_RENAME_CHECK, "sprint": GODOT_SPRINT_CHECK, "atlas": atlas_case.GODOT_CHECK, "bounce": bounce_case.GODOT_CHECK}
 
 
 def compact(obj):
@@ -174,6 +175,8 @@ step:
     if task == "atlas":
         atlas_case.write_png(path.parent / "terrain.png")
         source = atlas_case.AGGE_PROJECT
+    if task == "bounce":
+        source = bounce_case.AGGE_PROJECT
     path.write_text(source, encoding="utf-8")
 
 
@@ -192,6 +195,9 @@ script = ExtResource("1")
         fixtures["drive.gd"] = GODOT_DRIVE
     if task == "atlas":
         atlas_case.write_png(folder / "terrain.png")
+    if task == "bounce":
+        fixtures["arena.tscn"] = bounce_case.GODOT_ARENA
+        fixtures["ball.gd"] = bounce_case.GODOT_BALL
     for path, content in fixtures.items():
         (folder / path).write_text(content, encoding="utf-8")
 
@@ -223,6 +229,8 @@ def agge_check(agge, folder, task):
                 or any(tiles["tiles"].get(key) != [i, i >= 4] for i, key in enumerate("abcdefgh"))):
             return False, "incorrect atlas assignment"
         specs = [atlas_case.AGGE_REPLAY]
+    elif task == "bounce":
+        specs = [bounce_case.AGGE_REPLAY]
     else:
         assertions = [{"at":0,"field":"entity/hero/shield","is":7}]
         for at, x, y in ((0,10,20), (15,40,50), (30,100,80)):
@@ -242,6 +250,8 @@ def agge_trial(agge, folder, task):
         ops = [{"op":"rename","kind":"room","id":"arena","to":"vault"}]
     elif task == "atlas":
         ops = atlas_case.AGGE_EDITS
+    elif task == "bounce":
+        ops = bounce_case.AGGE_EDITS
     else:
         ops = [{"op":"splice","id":"drive","at":[6,1],"text":'  move dx*(1+down("fire")),dy'}]
     payload = compact({"ops": ops})
@@ -261,7 +271,8 @@ def godot_trial(godot, folder, task):
     else:
         import sys
         filename = "edit.py"
-        source = GODOT_RENAME_EDIT if task == "rename" else GODOT_SPRINT_EDIT
+        source = {"rename": GODOT_RENAME_EDIT, "sprint": GODOT_SPRINT_EDIT,
+                  "bounce": bounce_case.GODOT_EDIT}[task]
         command = [sys.executable, filename]
         display = "python edit.py"
     (folder / filename).write_text(source, encoding="utf-8")

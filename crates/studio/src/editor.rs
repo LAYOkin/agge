@@ -645,18 +645,31 @@ impl Workbench {
                 ));
             }
         });
-        ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Filter assets"));
+        ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Filter by ID or kind/ID"));
         ui.separator();
+        let filter = self.filter.trim().to_ascii_lowercase();
+        let (kind_filter, id_filter) = filter
+            .split_once('/')
+            .map_or((None, filter.as_str()), |(kind, id)| (Some(kind), id));
+        let searching = !filter.is_empty();
         egui::ScrollArea::vertical().show(ui, |ui| {
+            let mut has_match = false;
             for kind in Kind::ALL {
+                if kind_filter.is_some_and(|name| name != kind.name()) {
+                    continue;
+                }
                 let ids = self
                     .loaded
                     .project
                     .resources
                     .keys()
-                    .filter(|(k, id)| *k == kind && id.contains(&self.filter))
+                    .filter(|(k, id)| *k == kind && id.contains(id_filter))
                     .map(|(_, id)| id.clone())
                     .collect::<Vec<_>>();
+                if searching && ids.is_empty() {
+                    continue;
+                }
+                has_match |= !ids.is_empty();
                 let label = match kind {
                     Kind::Room => "Rooms",
                     Kind::Object => "Objects",
@@ -668,6 +681,7 @@ impl Workbench {
                     Kind::Particle => "Particles",
                 };
                 egui::CollapsingHeader::new(RichText::new(label).strong())
+                    .id_salt((kind.name(), searching))
                     .default_open(true)
                     .show(ui, |ui| {
                         for id in ids {
@@ -680,6 +694,9 @@ impl Workbench {
                             }
                         }
                     });
+            }
+            if searching && !has_match {
+                ui.label("No matching assets");
             }
         });
     }

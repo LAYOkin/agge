@@ -791,7 +791,7 @@ impl Workbench {
                 ui.label("Paste the replay JSON.");
                 ui.add(
                     egui::TextEdit::multiline(&mut draft.json)
-                        .code_editor()
+                        .font(egui::TextStyle::Monospace)
                         .desired_width(540.)
                         .desired_rows(9),
                 );

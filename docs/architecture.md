@@ -5,7 +5,7 @@
 | `agge-core` | Project encoding, typed references, DSL compilation, edit operations, transaction history, and local knowledge |
 | `agge-runtime` | Fixed-tick simulation, action input, collision, scene primitives, replay assertions, media loading, and headless PNG capture |
 | `agge` | Compact CLI and MCP over stdio, desktop packaging, and shared service handlers |
-| `agge-studio` | Native editor, OpenGL rendering, audio output, and the separate desktop player |
+| `agge-studio` | Native editor, OpenGL rendering with an optional Windows Vulkan build, audio output, and the separate desktop player |
 
 The source document is the authority. A sorted, typed resource index feeds validation, reference queries, safe renaming, and the runtime compiler. The manifest hashes canonical resource data, so changes in resource order or JSON spacing are excluded from semantic session deltas. A session checkpoint also hashes each referenced media file once by path. Media lookup shares the same confinement and file-size limits used by the engine and exporter. The base revision encodes 128 bits of the BLAKE3 hash of the source bytes, so optimistic writes still detect edits from outside AGGE. An index is rebuilt when needed, and a session diff uses content fingerprints without recompiling scripts. The parser records event byte ranges and symbol access lines, allowing safe event edits without reconstructing unrelated source.
 

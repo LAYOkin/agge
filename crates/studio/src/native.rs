@@ -24,6 +24,10 @@ pub fn color([r, g, b, a]: Color) -> Color32 {
 pub fn options(size: [f32; 2]) -> eframe::NativeOptions {
     eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(size),
+        #[cfg(all(windows, feature = "vulkan"))]
+        renderer: eframe::Renderer::Wgpu,
+        #[cfg(all(not(windows), feature = "vulkan"))]
+        renderer: eframe::Renderer::Glow,
         ..Default::default()
     }
 }

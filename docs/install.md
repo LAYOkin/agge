@@ -10,6 +10,14 @@ cargo build --workspace --release --locked
 
 The executables are `agge`, `agge-studio`, and `agge-player` in `target/release`. On Windows they have an `.exe` extension. To keep a portable copy, put the three binaries in the same directory so `agge export` can find `agge-player`.
 
+If Studio or the player fails to open a window on Windows, a build with Vulkan support is available for systems with a Vulkan-capable driver:
+
+```sh
+cargo build -p agge-studio --bins --release --locked --features vulkan
+```
+
+This selects Vulkan for both desktop executables. Games exported with that player also use Vulkan.
+
 You can also install the binaries into Cargo's `bin` directory.
 
 ```sh

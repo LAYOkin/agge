@@ -5,6 +5,7 @@ on: [push, pull_request]
 jobs:
   verify:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}

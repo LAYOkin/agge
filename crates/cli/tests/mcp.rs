@@ -295,6 +295,25 @@ fn cli_can_pin_a_single_replay_to_a_project_revision() {
 }
 
 #[test]
+fn malformed_replay_suite_reports_the_case_name() {
+    let example =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/orbit/game.agge");
+    let result = Command::new(env!("CARGO_BIN_EXE_agge"))
+        .arg("test")
+        .arg(example)
+        .arg(r#"{"cases":{"startup":{"ticks":0},"wrong_shape":{"ticks":"1"}}}"#)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(2));
+    assert!(result.stdout.is_empty());
+    let error = String::from_utf8(result.stderr).unwrap();
+    assert!(
+        error.starts_with("case wrong_shape: invalid type"),
+        "{error}"
+    );
+}
+
+#[test]
 fn asset_queries_inspect_relative_media_without_returning_binary_data() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("game.agge");

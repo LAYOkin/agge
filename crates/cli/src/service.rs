@@ -424,41 +424,52 @@ struct Suite {
     base: Option<String>,
     #[serde(default)]
     detail: bool,
-    cases: BTreeMap<String, Replay>,
+    cases: BTreeMap<String, Value>,
 }
 
 fn run_suite(store: &Store, args: Value) -> Result<Simulation> {
-    let suite: Suite = serde_json::from_value(args)?;
-    if !(1..=32).contains(&suite.cases.len())
-        || suite.cases.keys().any(|name| !agge_core::valid_id(name))
-        || suite
-            .cases
-            .values()
-            .map(|case| u64::from(case.ticks))
-            .sum::<u64>()
-            > 120_000
+    let Suite {
+        base,
+        detail,
+        cases,
+    } = serde_json::from_value(args)?;
+    if !(1..=32).contains(&cases.len()) {
+        return Err(fail("suite requires 1–32 named cases"));
+    }
+    let mut replays = Vec::with_capacity(cases.len());
+    for (name, case) in cases {
+        if !agge_core::valid_id(&name) {
+            return Err(fail(format!("invalid replay case name {name:?}")));
+        }
+        let replay: Replay =
+            serde_json::from_value(case).map_err(|error| fail(format!("case {name}: {error}")))?;
+        replays.push((name, replay));
+    }
+    if replays
+        .iter()
+        .map(|(_, case)| u64::from(case.ticks))
+        .sum::<u64>()
+        > 120_000
     {
-        return Err(fail(
-            "suite requires 1–32 named cases and at most 120000 total ticks",
-        ));
+        return Err(fail("suite accepts at most 120000 total ticks"));
     }
     let loaded = store.load()?;
-    require_revision(&loaded, suite.base.as_deref())?;
+    require_revision(&loaded, base.as_deref())?;
     let game = CompiledGame::new(loaded.project)?;
-    let cases = suite.cases.len();
+    let cases = replays.len();
     let (mut assertions, mut ticks, mut failed) = (0, 0, 0);
     let mut reports = BTreeMap::new();
-    for (name, case) in suite.cases {
+    for (name, case) in replays {
         match replay_compiled(&game, &case) {
             Ok((_, mut report)) => {
                 assertions += report.assertions;
                 ticks += report.ticks;
                 let passed = report.passed();
                 failed += usize::from(!passed);
-                if suite.detail || !passed {
+                if detail || !passed {
                     let omitted = report.failures.len().saturating_sub(8);
                     report.failures.truncate(8);
-                    if !suite.detail {
+                    if !detail {
                         report.samples.clear();
                     }
                     let mut result = json!(report);

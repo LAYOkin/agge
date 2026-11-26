@@ -88,6 +88,10 @@ pub struct Draft {
     pub raw: String,
     pub saved: Option<String>,
 }
+struct RenameDraft {
+    id: String,
+    error: Option<String>,
+}
 impl Draft {
     pub fn dirty(&self) -> bool {
         self.saved.as_ref() != Some(&self.raw)
@@ -112,7 +116,7 @@ pub struct Workbench {
     pub play: Option<Play>,
     filter: String,
     create: Option<(Kind, String)>,
-    rename: Option<String>,
+    rename: Option<RenameDraft>,
     settings: Option<Settings>,
     inspect: bool,
     jump_line: Option<usize>,
@@ -381,7 +385,7 @@ impl Workbench {
         }
     }
 
-    fn new_resource_id_error(&self, kind: Kind, id: &str) -> Option<&'static str> {
+    fn asset_id_error(&self, kind: Kind, id: &str) -> Option<&'static str> {
         if !valid_id(id) {
             return Some(
                 "Use 1–48 lowercase letters, digits, or underscores, starting with a letter.",
@@ -394,7 +398,7 @@ impl Workbench {
     }
 
     fn new_resource(&mut self, kind: Kind, id: String) -> Result<()> {
-        if let Some(message) = self.new_resource_id_error(kind, &id) {
+        if let Some(message) = self.asset_id_error(kind, &id) {
             return Err(fail(message));
         }
         let default = match kind {
@@ -665,7 +669,7 @@ impl Workbench {
                         }
                     });
                 ui.add(egui::TextEdit::singleline(&mut id).hint_text("resource_id"));
-                let id_error = self.new_resource_id_error(kind, &id);
+                let id_error = self.asset_id_error(kind, &id);
                 if let Some(message) = id_error.filter(|_| !id.is_empty()) {
                     ui.colored_label(Color32::LIGHT_RED, message);
                 }
@@ -685,26 +689,51 @@ impl Workbench {
                 self.create = Some((kind, id));
             }
         }
-        if let Some(mut name) = self.rename.take() {
-            let mut open = true;
-            let mut rename = false;
-            egui::Window::new("Rename asset")
-                .collapsible(false)
-                .resizable(false)
-                .open(&mut open)
+        if let Some(mut proposed) = self.rename.take()
+            && let Some(asset) = &self.draft
+        {
+            let (rename, cancel) = egui::Modal::new(egui::Id::new("rename_asset"))
                 .show(ctx, |ui| {
-                    ui.text_edit_singleline(&mut name);
-                    rename = ui.button("Rename and update references").clicked();
-                });
+                    ui.heading("Rename asset");
+                    if ui.text_edit_singleline(&mut proposed.id).changed() {
+                        proposed.error = None;
+                    }
+                    let changed = proposed.id != asset.id;
+                    let id_error = self.asset_id_error(asset.kind, &proposed.id);
+                    if let Some(message) = id_error
+                        .filter(|_| changed && !proposed.id.is_empty())
+                        .or(proposed.error.as_deref())
+                    {
+                        ui.colored_label(Color32::LIGHT_RED, message);
+                    }
+                    ui.horizontal(|ui| {
+                        let rename = ui
+                            .add_enabled(
+                                changed && id_error.is_none(),
+                                egui::Button::new("Rename and update references"),
+                            )
+                            .clicked();
+                        let cancel = ui.button("Cancel").clicked();
+                        (rename, cancel)
+                    })
+                    .inner
+                })
+                .inner;
             if rename {
-                self.command(|s| s.rename(name));
-            } else if open {
-                self.rename = Some(name);
+                if let Err(error) = self.rename(proposed.id.clone()) {
+                    proposed.error = Some(error.to_string());
+                    self.rename = Some(proposed);
+                }
+            } else if !cancel {
+                self.rename = Some(proposed);
             }
         }
     }
     fn ui(&mut self, ctx: &Context) {
-        let dialog_open = self.close_prompt || self.settings.is_some() || self.create.is_some();
+        let dialog_open = self.close_prompt
+            || self.settings.is_some()
+            || self.create.is_some()
+            || self.rename.is_some();
         if !dialog_open && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
             if self.play.is_some() {
                 self.play = None;
@@ -952,7 +981,10 @@ impl Workbench {
             self.open_reference(&reference, &location);
         }
         if rename {
-            self.rename = self.draft.as_ref().map(|d| d.id.clone());
+            self.rename = self.draft.as_ref().map(|d| RenameDraft {
+                id: d.id.clone(),
+                error: None,
+            });
         }
         if remove {
             self.command(Self::remove);

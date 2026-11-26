@@ -144,9 +144,8 @@ fn read_json(input: &str) -> Result<Value> {
 }
 
 fn export(store: &Store, output: &Path, player: Option<PathBuf>) -> Result<Value> {
-    let loaded = store.load()?;
+    let (loaded, source) = store.load_with_source()?;
     agge_core::Index::build(&loaded.project).require_valid()?;
-    Media::load(&loaded.project, store.root())?;
     if output.exists() {
         return Err(fail("export directory already exists"));
     }
@@ -171,7 +170,7 @@ fn export(store: &Store, output: &Path, player: Option<PathBuf>) -> Result<Value
     let stage = tempfile::tempdir_in(parent)?;
     fs::copy(&player, stage.path().join(binary_name))
         .map_err(|e| fail(format!("player {}: {e}", player.display())))?;
-    fs::write(stage.path().join("game.agge"), loaded.project.encode())?;
+    fs::write(stage.path().join("game.agge"), source)?;
     fs::write(
         stage.path().join("AGGE-LICENSE.txt"),
         include_str!("../../../LICENSE"),
@@ -190,6 +189,7 @@ fn export(store: &Store, output: &Path, player: Option<PathBuf>) -> Result<Value
         fs::create_dir_all(target.parent().expect("relative asset has staging parent"))?;
         fs::write(target, read_asset(store.root(), file)?)?;
     }
+    Media::load(&loaded.project, stage.path())?;
     fs::rename(stage.path(), output)?;
     Ok(
         json!({"directory":output, "binary":binary_name, "assets":assets.len(), "revision":loaded.revision}),

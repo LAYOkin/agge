@@ -115,16 +115,21 @@ impl Store {
     pub fn load(&self) -> Result<Loaded> {
         Ok(self.load_if_changed(None)?.expect("no known revision"))
     }
+    /// Load a project and the exact source used to compute its revision.
+    pub fn load_with_source(&self) -> Result<(Loaded, String)> {
+        Ok(self.read_snapshot(None)?.expect("no known revision"))
+    }
     pub fn load_if_changed(&self, known: Option<&str>) -> Result<Option<Loaded>> {
+        Ok(self.read_snapshot(known)?.map(|(loaded, _)| loaded))
+    }
+    fn read_snapshot(&self, known: Option<&str>) -> Result<Option<(Loaded, String)>> {
         let source = self.source()?;
         let revision = revision(&source);
         if known == Some(revision.as_str()) {
             return Ok(None);
         }
-        Ok(Some(Loaded {
-            revision,
-            project: Project::parse(&source)?,
-        }))
+        let project = Project::parse(&source)?;
+        Ok(Some((Loaded { revision, project }, source)))
     }
     pub fn transact(&self, base: Option<&str>, ops: Vec<Edit>) -> Result<Receipt> {
         self.transact_checked(base, ops, false, |_| Ok(true))

@@ -65,4 +65,4 @@ Place `agge` and `agge-player` from the same release build in the same directory
 agge export my_game/game.agge dist
 ```
 
-AGGE bundles the project, referenced media, and a player named `play.exe` on Windows or `play` on Linux and macOS. Launch it directly from the export directory. To package for another desktop target, build `agge-player` for that target and pass its path as the last argument to `agge export`. Native target libraries and, where applicable, application signing or installers are separate from AGGE's directory exporter.
+AGGE bundles the project, referenced media, and a player named `play.exe` on Windows or `play` on Linux and macOS. The bundled `game.agge` keeps the source revision, so you can run revision-pinned replays against either copy. Launch the player directly from the export directory. To package for another desktop target, build `agge-player` for that target and pass its path as the last argument to `agge export`. Native target libraries and, where applicable, application signing or installers are separate from AGGE's directory exporter.

@@ -95,6 +95,8 @@ Use `sound/audio_id` to count how many times a sound effect was queued on a tick
 
 Send `select` only when you need runtime state. Selected state includes the camera origin when it differs from `[0,0]`. Use `crop:[x,y,width,height]` in viewport coordinates when an image is needed. The renderer applies the current camera to world layers and lighting. HUD coordinates remain fixed on screen. MCP caps a crop at 512 pixels per edge. The CLI capture command takes an output path and captures the full viewport when `crop` is omitted. CLI images can be at most 2048 pixels per edge, so supply a crop for larger viewports. A fixed tick count, a fixed seed, and explicit inputs make replay the preferred entry point for automated tests.
 
+For `agge capture`, set `"capture_on_failure":true` to save the final frame even when an assertion fails or a script faults. The image shows the final state reached by the replay, and the command still exits with code 1 when it saves a frame from a failed replay.
+
 For smaller responses, use `sample:[[0,"entity/hero/x"],[12,"global/score"]]`. To read the same fields at several ticks, use `sample:{"at":[0,6,12],"fields":["entity/hero/x","entity/hero/y"]}`. Reports return just the values in request order, with fields grouped by tick in the grid form. A missing field value or a tick skipped after a fault returns `null`. Samples are observations. Add assertions to make a result fail when a value is wrong.
 
 Set `base` to the revision returned by a query to pin a single replay or a suite to that project source. If the project has changed, AGGE rejects the request and reports the current revision.

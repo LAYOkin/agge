@@ -520,6 +520,12 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode) -> Result<
         .remove("crop")
         .map(serde_json::from_value)
         .transpose()?;
+    let capture_on_failure = mode == SimulationMode::Capture
+        && fields
+            .remove("capture_on_failure")
+            .map(serde_json::from_value)
+            .transpose()?
+            .unwrap_or(false);
     if mode == SimulationMode::Test && (selection.is_some() || area.is_some()) {
         return Err(fail("test accepts replay fields only"));
     }
@@ -539,7 +545,7 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode) -> Result<
             [0, 0, width, height]
         })
     });
-    let bytes = if let Some(area) = area.filter(|_| ok) {
+    let bytes = if let Some(area) = area.filter(|_| ok || capture_on_failure) {
         let media = Media::load(world.project(), store.root())?;
         result["crop"] = json!(area);
         Some(capture(&world, &media, area)?)

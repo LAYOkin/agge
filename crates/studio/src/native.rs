@@ -122,7 +122,7 @@ impl Play {
     }
     pub fn step(&mut self, ctx: &egui::Context) {
         if self.world.fault().is_none() {
-            let (mut input, pressed) = actions(ctx, self.world.project());
+            let (mut input, pressed, _) = actions(ctx, self.world.project());
             input.extend(pressed);
             self.advance(&input);
         }
@@ -154,7 +154,10 @@ impl Play {
         if let Some(last) = self.last.replace(now) {
             self.elapsed += (now - last).as_secs_f64().min(0.25);
         }
-        let (held, pressed) = actions(ctx, self.world.project());
+        let (held, pressed, reset_pending) = actions(ctx, self.world.project());
+        if reset_pending {
+            self.pending.clear();
+        }
         self.pending.extend(pressed);
         for _ in 0..12 {
             if self.elapsed < dt {
@@ -251,12 +254,19 @@ impl AudioOutput {
     }
 }
 
-fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input) {
+fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input, bool) {
     let mut held = Input::new();
     let mut pressed = Input::new();
-    ctx.input(|input| {
-        let just_pressed = input
+    let reset_pending = ctx.input(|input| {
+        if !input.focused {
+            return true;
+        }
+        let focus_loss = input
             .events
+            .iter()
+            .rposition(|event| matches!(event, egui::Event::WindowFocused(false)));
+        let events = &input.events[focus_loss.map_or(0, |index| index + 1)..];
+        let just_pressed = events
             .iter()
             .filter_map(|event| match event {
                 egui::Event::Key {
@@ -295,13 +305,56 @@ fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input) {
                     .any(|binding| binding.eq_ignore_ascii_case(key.name()))
             });
         }
+        focus_loss.is_some()
     });
-    (held, pressed)
+    (held, pressed, reset_pending)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn play_drops_buffered_input_when_the_window_loses_focus() {
+        let mut play = Play::new(Project::default(), PathBuf::new(), None).unwrap();
+        play.recording = Some(ReplayRecorder::new("main"));
+        let ctx = egui::Context::default();
+        let start = Instant::now();
+        let update = |play: &mut Play, time, events| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    events,
+                    focused: true,
+                    ..Default::default()
+                },
+                |ctx| play.update_at(ctx, start + Duration::from_millis(time)),
+            );
+        };
+        let press = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+
+        update(&mut play, 0, vec![press(Key::Space)]);
+        assert!(play.pending.contains("fire"));
+        update(
+            &mut play,
+            20,
+            vec![
+                press(Key::ArrowLeft),
+                egui::Event::WindowFocused(false),
+                egui::Event::WindowFocused(true),
+                press(Key::ArrowRight),
+            ],
+        );
+        let replay = play.recording.as_ref().unwrap().replay();
+        assert_eq!(replay.ticks, 1);
+        assert_eq!(replay.input.len(), 1);
+        assert_eq!(replay.input[0].2, "right");
+    }
 
     #[test]
     fn play_clock_does_not_catch_up_after_startup_or_pause() {

@@ -58,6 +58,8 @@ A regular sprite sheet and tile palette can be configured in one batch.
 
 `slice` replaces the frame list in row-major order. Optional `at` and `gap` values are in PNG pixels. `atlas` maps each key to a consecutive frame starting at `first` (default 0), with `solid` listing which keys block movement. The operation updates those entries and preserves the other keys. Include every existing textured key when changing an assigned atlas. Check media validation after slicing to verify the frame rectangles fit the actual PNG.
 
+Use `{"op":"flood","map":"layout","at":[2,3],"tile":"#"}` to replace the edge-connected region of matching cells at column 2, row 3. Coordinates are zero-based. Use a defined palette tile or `"."` to erase the region.
+
 After slicing a sheet, use `{"op":"clip","id":"pulse","sprite":"ship","first":4,"count":6,"fps":16,"mode":"once"}` to create or replace an animation. `first` defaults to 0 and `mode` to `loop`. Use a normal animation resource with an explicit frame list for custom frame sequences.
 
 Set a room's bounds and camera in one operation, for example

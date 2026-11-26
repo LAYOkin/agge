@@ -505,6 +505,59 @@ pub struct Tilemap {
 }
 
 impl Tilemap {
+    /// Replace the edge-connected region containing `at` with a palette tile or empty space.
+    pub fn flood(&mut self, at: [usize; 2], tile: char) -> Result<()> {
+        let [x, y] = at;
+        let width = self.rows.first().map_or(0, String::len);
+        let height = self.rows.len();
+        if width > 1024
+            || height > 1024
+            || self
+                .rows
+                .iter()
+                .any(|row| row.len() != width || !row.is_ascii())
+        {
+            return Err(fail(
+                "flood requires a rectangular ASCII map up to 1024×1024",
+            ));
+        }
+        if x >= width || y >= height {
+            return Err(fail("flood origin is outside the map"));
+        }
+        if tile != '.' && (!tile.is_ascii_graphic() || !self.tiles.contains_key(&tile)) {
+            return Err(fail(
+                "flood tile must be empty space or a defined ASCII tile",
+            ));
+        }
+        let target = self.rows[y].as_bytes()[x];
+        if char::from(target) == tile {
+            return Ok(());
+        }
+        let mut buffer = [0; 4];
+        let replacement = tile.encode_utf8(&mut buffer);
+        let mut pending = vec![at];
+        while let Some([x, y]) = pending.pop() {
+            let row = &mut self.rows[y];
+            if row.as_bytes()[x] != target {
+                continue;
+            }
+            row.replace_range(x..x + 1, replacement);
+            if x > 0 {
+                pending.push([x - 1, y]);
+            }
+            if x + 1 < width {
+                pending.push([x + 1, y]);
+            }
+            if y > 0 {
+                pending.push([x, y - 1]);
+            }
+            if y + 1 < height {
+                pending.push([x, y + 1]);
+            }
+        }
+        Ok(())
+    }
+
     pub fn set_atlas_palette(
         &mut self,
         sprite: &str,

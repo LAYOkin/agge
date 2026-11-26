@@ -492,6 +492,11 @@ pub enum Edit {
         #[serde(default)]
         border: bool,
     },
+    Flood {
+        map: String,
+        at: [usize; 2],
+        tile: char,
+    },
     Stamp {
         map: String,
         at: [usize; 2],
@@ -718,6 +723,7 @@ impl Edit {
                     row.replace_range(x..x + w, &replacement);
                 }
             }
+            Self::Flood { map, at, tile } => map_mut(project, &map)?.flood(at, tile)?,
             Self::Stamp {
                 map,
                 at: [x, y],

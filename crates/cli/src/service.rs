@@ -559,6 +559,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"clip","id":"pulse","sprite":"ship","first":4,"count":6,"fps":16,"mode":"once"},
             {"op":"atlas","map":"layout","sprite":"terrain","keys":"abcd","solid":"ab"},
             {"op":"fill","map":"layout","area":[0,0,8,8],"tile":"#","border":true},
+            {"op":"flood","map":"layout","at":[2,3],"tile":"#"},
             {"op":"stamp","map":"layout","at":[1,1],"rows":[".#","#."]}
         ]),
         "room" => {

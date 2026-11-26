@@ -253,6 +253,51 @@ fn fill_and_stamp_form_compact_collision_map() {
 }
 
 #[test]
+fn flood_replaces_only_connected_cells_and_is_undoable() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Store::new(directory.path().join("game.agge"));
+    let mut project = Project::default();
+    edit(json!({"op":"put","kind":"tilemap","id":"tiles","data":{
+        "cell":8,"tiles":{"#":[[1,2,3,255],true],"+":[[2,3,4,255],false]},
+        "rows":["..#.",".###","#..."]
+    }}))
+    .apply(&mut project)
+    .unwrap();
+    store.init(&project).unwrap();
+    let initial = store.load().unwrap().revision;
+    let flood = |at, tile| edit(json!({"op":"flood","map":"tiles","at":at,"tile":tile}));
+    assert!(
+        store
+            .transact(Some(&initial), vec![flood([4, 0], "+")])
+            .is_err()
+    );
+    assert!(
+        store
+            .transact(Some(&initial), vec![flood([0, 0], "x")])
+            .is_err()
+    );
+    let changed = store
+        .transact(Some(&initial), vec![flood([0, 0], "+")])
+        .unwrap();
+    let updated = store.load().unwrap();
+    let Some(Resource::Tilemap(map)) = updated.project.get(Kind::Tilemap, "tiles") else {
+        panic!("missing tilemap");
+    };
+    assert_eq!(map.rows, ["++#.", "+###", "#..."]);
+    let no_op = store
+        .transact(Some(&changed.revision), vec![flood([0, 0], "+")])
+        .unwrap();
+    assert_eq!(no_op.revision, changed.revision);
+    assert_eq!(
+        store
+            .travel(Some(&changed.revision), false)
+            .unwrap()
+            .revision,
+        initial
+    );
+}
+
+#[test]
 fn event_edits_keep_other_events_and_track_symbol_locations() {
     use agge_core::script::{Access, Event, compile, replace_event};
 

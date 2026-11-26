@@ -3,7 +3,7 @@ mod room_camera;
 
 use crate::{
     editor::{MINT, MUTED, Workbench},
-    viewport::{Camera, PRIMARY, flood_cells, stroke_cells},
+    viewport::{Camera, PRIMARY, stroke_cells},
 };
 use agge_core::{
     AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Project, Resource, Room,
@@ -743,9 +743,9 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
         work.tool.stroke = None;
         if response.clicked_by(PRIMARY)
             && let Some(cell) = cell
-            && (brush == '.' || map.tiles.contains_key(&brush))
+            && let Err(error) = map.flood(cell, brush)
         {
-            flood_cells(&mut map.rows, [w, h], cell, brush);
+            work.note(error.to_string(), true);
         }
     } else if let Some(cell) = cell.filter(|_| active)
         && (brush == '.' || map.tiles.contains_key(&brush))

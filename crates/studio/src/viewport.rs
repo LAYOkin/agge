@@ -145,52 +145,9 @@ pub fn stroke_cells(from: [usize; 2], to: [usize; 2], mut paint: impl FnMut(usiz
     }
 }
 
-pub fn flood_cells(rows: &mut [String], [w, h]: [usize; 2], start: [usize; 2], brush: char) {
-    let [x, y] = start;
-    let Some(&target) = rows.get(y).and_then(|row| row.as_bytes().get(x)) else {
-        return;
-    };
-    if !brush.is_ascii() || !target.is_ascii() || char::from(target) == brush {
-        return;
-    }
-    let mut buffer = [0; 4];
-    let replacement = brush.encode_utf8(&mut buffer);
-    let mut pending = vec![start];
-    while let Some([x, y]) = pending.pop() {
-        let Some(row) = rows.get_mut(y) else { continue };
-        if row.as_bytes().get(x) != Some(&target) {
-            continue;
-        }
-        row.replace_range(x..x + 1, replacement);
-        if x > 0 {
-            pending.push([x - 1, y]);
-        }
-        if x + 1 < w {
-            pending.push([x + 1, y]);
-        }
-        if y > 0 {
-            pending.push([x, y - 1]);
-        }
-        if y + 1 < h {
-            pending.push([x, y + 1]);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{flood_cells, stroke_cells};
-
-    #[test]
-    fn fill_stays_inside_the_connected_region() {
-        let mut rows = ["..#.", ".###", "#..."].map(str::to_owned);
-        flood_cells(&mut rows, [4, 3], [0, 0], '+');
-        assert_eq!(rows, ["++#.", "+###", "#..."]);
-        flood_cells(&mut rows, [4, 3], [0, 0], '+');
-        assert_eq!(rows, ["++#.", "+###", "#..."]);
-        flood_cells(&mut rows, [4, 3], [0, 0], '.');
-        assert_eq!(rows, ["..#.", ".###", "#..."]);
-    }
+    use super::stroke_cells;
 
     #[test]
     fn brush_does_not_skip_cells_on_fast_drags() {

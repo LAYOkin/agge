@@ -31,6 +31,7 @@ cargo run -p agge -- test examples/bankshot/game.agge @examples/bankshot/replay.
 | [Switchback](examples/switchback) | Jump through one-way platforms, collect two chips, and restore the lift. |
 | [Bank Shot](examples/bankshot) | Aim with the arrows, launch with Space, and rebound into three relays within three shots. Reset with R. |
 | [Cinder Circuit](examples/cinder) | Restore three relays while dodging sentry fire. Uses collision filters, animated effects, timers, looped music, and live HUD meters. |
+| [Pulse Lock](examples/pulse_lock) | Time three taps as a cursor sweeps across the gates. Uses a custom keyboard action and replay-verified timing. |
 
 ![Cinder Circuit playfield showing the pilot, three relays, and status meters](examples/cinder/preview.png)
 

@@ -1,0 +1,46 @@
+agge/1 {"title":"Pulse Lock","start":"main","size":[480,240],"hz":60,"seed":1,"bindings":{"lock":["Space","J"]}}
+room clear {"bg":[17,34,48,255],"instances":[["control","restart",0.0,0.0]],"ui":[{"at":[32.0,48.0],"text":"ALL GATES LOCKED","color":[142,232,232,255],"size":22},{"at":[32.0,97.0],"text":"The signal is synchronized.","color":[187,200,226,255],"size":14},{"at":[32.0,130.0],"text":"MISSES ","color":[255,195,131,255],"size":12,"value":"misses"},{"at":[32.0,181.0],"text":"ENTER / X    Play again","color":[187,200,226,255],"size":14}],"meters":[{"at":[32.0,213.0],"size":[416.0,5.0],"value":"locks","max":3.0,"color":[142,232,232,255],"track":[49,60,87,255]}]}
+room main {"bg":[17,22,39,255],"instances":[["rail","track",32.0,113.0],["first","gate",122.0,94.0],["second","gate",238.0,94.0],["third","gate",354.0,94.0],["indicator","target",122.0,135.0],["cursor","pulse",36.0,109.0]],"ui":[{"at":[32.0,23.0],"text":"PULSE LOCK","color":[142,232,232,255],"size":22},{"at":[320.0,26.0],"text":"MISSES ","color":[255,195,131,255],"size":12,"value":"misses"},{"at":[126.0,76.0],"text":"1","color":[187,200,226,255],"size":12},{"at":[242.0,76.0],"text":"2","color":[187,200,226,255],"size":12},{"at":[358.0,76.0],"text":"3","color":[187,200,226,255],"size":12},{"at":[32.0,159.0],"text":"SPACE / J    Lock the lit gate","color":[187,200,226,255],"size":14},{"at":[32.0,186.0],"text":"Time the tap on a rightward pass.","color":[187,200,226,255],"size":12}],"meters":[{"at":[32.0,213.0],"size":[416.0,5.0],"value":"locks","max":3.0,"color":[142,232,232,255],"track":[49,60,87,255]}]}
+object gate {"size":[20.0,42.0],"color":[53,69,104,255]}
+object pulse {"size":[12.0,12.0],"color":[255,195,131,255],"shape":"circle","script":"lock","depth":1}
+object restart {"size":[16.0,16.0],"color":[255,255,255,255],"script":"restart","hidden":true}
+object target {"size":[20.0,4.0],"color":[142,232,232,255],"script":"indicator"}
+object track {"size":[416.0,4.0],"color":[49,60,87,255]}
+script indicator
+step:
+  set x = lock.gate(global(locks)) - 10
+---
+script lock
+fn gate(stage) = 132 + 116 * stage
+create:
+  set direction = 1
+  global locks = 0
+  global misses = 0
+step:
+  if x >= 432
+    set direction = -1
+  end
+  if x <= 36
+    set direction = 1
+  end
+  move direction * 240 * dt, 0
+  if pressed("lock")
+    if direction == 1 && abs(x + 6 - gate(global(locks))) <= 10
+      global locks = global(locks) + 1
+      emit spark
+      if global(locks) == 3
+        goto clear
+      end
+    else
+      global locks = 0
+      global misses = global(misses) + 1
+    end
+  end
+---
+script restart
+step:
+  if pressed("confirm")
+    goto main
+  end
+---
+particle spark {"count":8,"life":16,"speed":60.0,"radius":1.5,"color":[142,232,232,255]}

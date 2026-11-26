@@ -1,0 +1,39 @@
+{
+  "cases": {
+    "clean_run": {
+      "ticks": 81,
+      "input": [[23, 23, "lock"], [52, 52, "lock"], [81, 81, "lock"]],
+      "expect": [
+        {"at": 0, "field": "entity/cursor/x", "is": 36},
+        {"at": 23, "field": "global/locks", "is": 1},
+        {"at": 23, "field": "particles", "is": 8},
+        {"at": 52, "field": "global/locks", "is": 2},
+        {"at": 81, "field": "global/locks", "is": 3},
+        {"at": 81, "field": "global/misses", "is": 0},
+        {"at": 81, "field": "room", "is": "clear"}
+      ]
+    },
+    "held_and_missed": {
+      "ticks": 62,
+      "input": [[23, 53, "lock"], [61, 61, "lock"]],
+      "expect": [
+        {"at": 52, "field": "global/locks", "is": 1},
+        {"at": 52, "field": "global/misses", "is": 0},
+        {"at": 61, "field": "global/locks", "is": 0},
+        {"at": 61, "field": "global/misses", "is": 1},
+        {"at": 62, "field": "entity/indicator/x", "is": 122}
+      ]
+    },
+    "restart": {
+      "ticks": 85,
+      "input": [[23, 23, "lock"], [52, 52, "lock"], [81, 81, "lock"], [85, 85, "confirm"]],
+      "expect": [
+        {"at": 81, "field": "room", "is": "clear"},
+        {"at": 85, "field": "room", "is": "main"},
+        {"at": 85, "field": "global/locks", "is": 0},
+        {"at": 85, "field": "global/misses", "is": 0},
+        {"at": 85, "field": "entity/cursor/x", "is": 36}
+      ]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Install AGGE
 
-Download your platform's archive and SHA-256 file from a successful [Portable builds run](https://github.com/LAYOkin/agge/actions/workflows/artifacts.yml). Extract the archive and keep its three executables together. The Windows archive uses Vulkan and needs a compatible graphics driver. The archives are unsigned. Linux builds need the host's ALSA and graphics libraries.
+Download your platform's pre-alpha archive and SHA-256 file from a successful [Portable development builds run](https://github.com/LAYOkin/agge/actions/workflows/artifacts.yml). Extract the archive and keep its three executables together. The Windows archive uses Vulkan and needs a compatible graphics driver. The archives are unsigned. Linux builds need the host's ALSA and graphics libraries.
 
 To verify the archive on Linux or macOS, use `sha256sum -c ARCHIVE.sha256` where available, or `shasum -a 256 -c ARCHIVE.sha256`. In PowerShell, compare `(Get-FileHash ARCHIVE -Algorithm SHA256).Hash` with the first value in the companion file.
 
@@ -46,4 +46,4 @@ Launch with `agge-player --save path/to/session.aggesave PROJECT` to enable F6 q
 
 ## Make a portable build
 
-After a release build, run `python tools/package_release.py --label dev` with Python 3.11 or newer. The script puts the archive and checksum in `target/dist`. It checks every bundled project and replay, then exports and retests Cinder Circuit with the staged player. CI runs this flow per platform for version tags and on demand.
+After an optimized build, run `python tools/package_release.py --label dev` with Python 3.11 or newer. The script puts the archive and checksum in `target/dist`. It checks every bundled project and replay, then exports and retests Cinder Circuit with the staged player. CI runs this flow per platform for packaging changes, version tags, and on demand.

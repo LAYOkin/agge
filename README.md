@@ -2,6 +2,8 @@
 
 **Artificial General Game Engine** is a free, open-source, agent-first 2D game engine written in Rust and licensed under MIT. It runs locally and includes a visual editor, a game scripting language, a desktop player, a CLI, and a native MCP server. The editor, CLI, and MCP server share the same project model and transaction layer, so developers and coding agents can work on the same game.
 
+**AGGE is in pre-alpha.** Use current builds for experimentation, prototyping, and engine development. Professional and commercial game development is the bar for the first v0.1 release. [Development status and release criteria](docs/release.md)
+
 ## Agent-first from project files to playtests
 
 AGGE is designed to minimize the tokens a coding agent needs to build, change, and verify a game. The principle applies throughout the engine. Whenever AGGE can do a job deterministically, it should do that work itself so the agent can focus on game design and behavior.
@@ -15,7 +17,7 @@ AGGE targets **80–90% fewer tokens on suitable tasks**. Six scripted edit work
 
 ## Play or edit a game
 
-Use a [portable CI build](docs/install.md), or install Rust 1.89 or newer to build from source. On Ubuntu, install `pkg-config libasound2-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev`.
+Use a [portable development build](docs/install.md), or install Rust 1.89 or newer to build from source. On Ubuntu, install `pkg-config libasound2-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev`.
 
 ```sh
 cargo build --workspace --release --locked
@@ -49,9 +51,9 @@ cargo run -p agge -- test examples/bankshot/game.agge @examples/bankshot/replay.
 - [Benchmarks](bench/README.md) record measured workflow token counts and describe how to collect model-session usage.
 - [Contributing](CONTRIBUTING.md) covers development checks, fixtures, and benchmark evidence.
 
-## Current release scope
+## Current capabilities
 
-The runtime supports fixed-step movement, filtered AABB collision, gravity, scrolling cameras, parallax, animation timing, room lighting and audio, keyboard and pointer input, HUD labels and meters, particles, and tick-boundary saves. Studio edits the same resources agents use. See the [v0.1 release status](docs/release.md) for validation and outstanding work.
+The runtime supports fixed-step movement, filtered AABB collision, gravity, scrolling cameras, parallax, animation timing, room lighting and audio, keyboard and pointer input, HUD labels and meters, particles, and tick-boundary saves. Studio edits the same resources agents use.
 
 ## Development
 

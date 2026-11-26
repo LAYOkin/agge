@@ -26,7 +26,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agge"
-version = "0.1.0"
+version = "0.0.0-prealpha"
 dependencies = [
  "agge-core",
  "agge-runtime",
@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "agge-core"
-version = "0.1.0"
+version = "0.0.0-prealpha"
 dependencies = [
  "base64",
  "blake3",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "agge-runtime"
-version = "0.1.0"
+version = "0.0.0-prealpha"
 dependencies = [
  "agge-core",
  "blake3",
@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "agge-studio"
-version = "0.1.0"
+version = "0.0.0-prealpha"
 dependencies = [
  "agge-core",
  "agge-runtime",

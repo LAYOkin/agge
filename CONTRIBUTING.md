@@ -22,4 +22,4 @@ For token-efficiency work, capture both workflows and check that they produce eq
 
 Commit source projects, assets, and replay specs with examples. AGGE's lock, history, and knowledge files are machine-local sidecars. Consult [AGENTS.md](AGENTS.md) for the project editing workflow.
 
-After changing the player, export path, or distribution tooling, build the release binaries and run the portable packaging script. The [release status](docs/release.md) lists the native checks that complement the automated package verification.
+After changing the player, export path, or distribution tooling, build the optimized binaries and run the portable packaging script. The [development status](docs/release.md) lists the native checks that complement the automated package verification.

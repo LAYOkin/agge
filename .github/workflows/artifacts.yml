@@ -1,4 +1,4 @@
-name: Portable builds
+name: Portable development builds
 
 on:
   workflow_dispatch:
@@ -41,12 +41,12 @@ jobs:
       - run: cargo +stable build --release --workspace --locked ${{ matrix.features }}
       - name: Stage and verify portable archive
         env:
-          AGGE_PACKAGE_LABEL: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+          AGGE_PACKAGE_LABEL: dev-${{ github.sha }}
         run: python tools/package_release.py --label "${AGGE_PACKAGE_LABEL}"
         shell: bash
       - uses: actions/upload-artifact@v7
         with:
-          name: agge-${{ matrix.name }}
+          name: agge-dev-${{ matrix.name }}
           path: target/dist/*
           compression-level: 0
           if-no-files-found: error

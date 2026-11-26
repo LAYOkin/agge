@@ -13,7 +13,10 @@ use std::{
     process::ExitCode,
 };
 
-const HELP: &str = "AGGE 0.1.0
+const HELP: &str = concat!(
+    "AGGE ",
+    env!("CARGO_PKG_VERSION"),
+    "
 agge init PROJECT
 agge check PROJECT
 agge query PROJECT [JSON]
@@ -28,7 +31,8 @@ agge knowledge PROJECT JSON
 agge mcp PROJECT
 agge export PROJECT DIRECTORY [PLAYER_BINARY]
 
-JSON can be inline, @file, or - for stdin. PROJECT is a .agge file.";
+JSON can be inline, @file, or - for stdin. PROJECT is a .agge file."
+);
 
 fn main() -> ExitCode {
     match run() {

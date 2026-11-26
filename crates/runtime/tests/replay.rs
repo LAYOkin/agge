@@ -361,6 +361,39 @@ step:
 }
 
 #[test]
+fn release_is_seen_once_per_held_span_and_keeps_user_functions_working() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+script drive
+fn released(scale) = scale * 2
+create:
+  global startup = released(3)
+step:
+  if released("fire")
+    global releases = global(releases) + 1
+  end
+---
+"#,
+    )
+    .unwrap();
+    let spec = serde_json::from_str(
+        r#"{"ticks":6,"input":[[1,2,"fire"],[5,5,"fire"]],"expect":[
+          {"at":0,"field":"global/startup","is":6},
+          {"at":2,"field":"global/releases","is":0},
+          {"at":3,"field":"global/releases","is":1},
+          {"at":4,"field":"global/releases","is":1},
+          {"at":6,"field":"global/releases","is":2}
+        ]}"#,
+    )
+    .unwrap();
+    let (_, report) = replay(project, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+    assert_eq!(report.assertions, 5);
+}
+
+#[test]
 fn movement_sweeps_multiple_cells_and_pressed_fires_once() {
     let project = Project::parse(
         r##"agge/1 {"start":"test","size":[80,64]}

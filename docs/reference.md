@@ -91,6 +91,8 @@ Expressions use finite single-precision numbers, `true` and `false`, parentheses
 
 Read-only variables are `dt`, `tick`, `width`, and `height`. Width and height are the room dimensions. Use `view("width")` and `view("height")` for the viewport dimensions. `view("x")` and `view("y")` read the last applied camera position. A `camera` request clamps to the room and overrides follow for that tick. If multiple scripts request a camera position, the last request wins. Requests from the previous room are cleared when a room change takes effect. Functions are `down("action")`, `pressed("action")`, `touch("object")`, `global(name)`, `rand()`, and the numeric functions `abs(x)`, `floor(x)`, `ceil(x)`, `sin(x)`, `cos(x)`, `sqrt(x)`, `min(x,y)`, `max(x,y)`, and `clamp(x,min,max)`. `touch` tests overlap with other instances of the named object. `rand` returns a seeded value in [0, 1).
 
+`released("action")` returns `1` on the first simulation tick after the action stops being held and `0` otherwise. Use it to commit an action after a hold, such as launching a charged shot.
+
 ### Reuse script expressions
 
 Declare an expression function at the top level of any script. An event can call functions in its own script by name or call another script's functions with `script_id.function(...)`. The module can contain just functions. Declarations can appear before or after events.

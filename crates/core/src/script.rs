@@ -190,6 +190,7 @@ pub enum Expr {
     Global(String),
     Down(String),
     Pressed(String),
+    Released(String),
     Touch(String),
     Grounded,
     Impact,
@@ -523,7 +524,10 @@ impl<'a> Parser<'a> {
                                 }
                             })
                         }
-                        "down" | "pressed" => {
+                        "down" | "pressed" | "released"
+                            if word != "released"
+                                || matches!(self.peek(), Some(Token::Quoted(_))) =>
+                        {
                             let Some((Token::Quoted(key), _)) = self.take() else {
                                 return Err(self.error("expected quoted action"));
                             };
@@ -531,10 +535,10 @@ impl<'a> Parser<'a> {
                                 return Err(self.error("invalid action name"));
                             }
                             self.symbol(Scope::Action, &key, Access::Read);
-                            if word == "down" {
-                                Expr::Down(key)
-                            } else {
-                                Expr::Pressed(key)
+                            match word.as_str() {
+                                "down" => Expr::Down(key),
+                                "pressed" => Expr::Pressed(key),
+                                _ => Expr::Released(key),
                             }
                         }
                         "choose" => {

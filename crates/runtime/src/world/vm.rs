@@ -274,6 +274,7 @@ impl World {
             Expr::Global(name) => self.globals.get(name).copied().unwrap_or(0.),
             Expr::Down(key) => flag(self.input.contains(key)),
             Expr::Pressed(key) => flag(self.input.contains(key) && !self.previous.contains(key)),
+            Expr::Released(key) => flag(!self.input.contains(key) && self.previous.contains(key)),
             Expr::Touch(name) => {
                 let bounds = e.bounds(self.object(&e.object));
                 flag(self.members.get(name).is_some_and(|ids| {

@@ -42,6 +42,8 @@ Function definitions appear in the outline as `fn/name`. Use `{"get":"script/mot
 
 Use `{"schema":"edits"}` for the edit catalog or `{"schema":"edit/grid"}` for one form. Query any resource kind or `project` or `replay` for its shape. `put` replaces a whole resource. `patch` changes top-level JSON fields, with `null` removing a field. `rename` updates typed references across rooms, objects, animations, project settings, and compiled script references. `fill` and `stamp` use tile coordinates, while `place` and `grid` use pixels.
 
+Use `{"refs":"global/score"}` to find script lines and HUD fields that use a global. `{"op":"rename_global","id":"score","to":"points"}` updates its reads, writes, labels, and meters in one transaction. AGGE rejects a destination name already in use. Update `global/score` selectors in external replay files when renaming a global.
+
 `{"op":"placement","room":"main","id":"hero","to":"pilot","at":[48,32]}` renames and moves one placement and preserves a camera reference to it. Use `object` to retarget the placement or `remove:true` alone to delete it and clear its camera reference. Update any external replay selectors that use a renamed placement ID.
 
 Use `{"op":"script_event","id":"drive","event":"step","body":"  move 120 * dt, 0"}` to replace an event body or add an absent event to an existing script. An empty string keeps the header and clears the executable body. Explicit `null` removes the event. The body must omit event headers. The edit preserves the existing header and trailing comments outside the executable block.
@@ -107,7 +109,9 @@ Set `base` to the revision returned by a query to pin a single replay or a suite
 
 Set `seed` on a replay to override the project's random seed from tick 0. Use an unsigned 64-bit integer. Omit it to use the project seed. In a suite, set it inside each case whose random sequence you want to control.
 
-Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}}}` to `agge test` or `agge_run` for a suite. Each case starts a fresh world from the same compiled revision. Set `detail:true` to include successful reports and samples. By default the response summarizes passing cases and includes reports only for failures. Each report keeps the first eight failed assertions and counts the rest. Suites accept up to 32 cases and 120,000 total ticks. Selective state and PNG crops are available on a single replay.
+Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}}}` to `agge test` or `agge_run` for a suite. Each case starts a fresh world from the same compiled revision. Set `detail:true` to include successful reports and samples. By default the response summarizes passing cases and includes reports only for failures. Suites accept up to 32 cases and 120,000 total ticks. Selective state and PNG crops are available on a single replay.
+
+CLI and MCP reports include the first eight failed assertions and return the remaining count as `omitted_failures`. This applies to single replays, suite cases, and guarded edits. Re-run a smaller set of assertions when inspecting later failures.
 
 Pass a case name after the suite on the CLI to run only that case, for example `agge test PROJECT @replay.json startup`.
 

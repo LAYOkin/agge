@@ -13,9 +13,15 @@ The store serializes AGGE writers using a sibling lock file. For each commit it 
 
 The service layer batches reads on one immutable store snapshot and builds its dependency index lazily. MCP reuses the parsed project and its index while the source revision matches. It reads and hashes the source again on each query to detect external edits. Guarded edits validate a candidate under the writer lock and pass it to the runtime replay checker before writing. A replay suite compiles once and starts a new world per case. Those worlds share immutable project data, script programs, object definitions, animations, and static tile collision. A failed guard or preview creates no history entry.
 
+Studio playback and headless verification drive the same stepwise replay runner. It applies recorded input, ticks the world, and evaluates assertions and samples before the native renderer plays any queued audio. Studio can pause and inspect that world between ticks.
+
 Rooms can be larger than the logical viewport. Camera follow uses the same placement index as scoped replay assertions. The camera updates after simulation and resets on room entry, so a headless crop and a native playtest share the same viewport origin at a given simulation tick. Native lighting caches a padded region of the world on a fixed sample grid so ordinary camera motion reuses the texture. HUD labels use viewport coordinates.
 
 Solid and one-way instance bounds are indexed in 64-pixel cells. Large colliders and wide sweeps have bounded fallback paths. Axis clamping is independent of candidate order, so bucket membership can change as instances move without changing deterministic collision results. Tests compare the indexed path with an exhaustive sweep. Studio and the runtime share the replay format, including action spans captured before each native simulation tick.
+
+Overlap checks use the same spatial index, with a separate set of buckets for each object type referenced by a compiled `touch` expression. The query stops at the first actual bounds overlap. The runtime updates membership after each actor runs, so scripts observe the same positions and lifetimes as the tick's established execution order.
+
+Actors without a step event, gravity, velocity, or active timers stay in the room and collision indexes without being removed and reinserted every tick. Create events still run for all placements, and a create event that sets velocity makes its actor eligible for movement and velocity collision events.
 
 Tile collision compiles to one occupancy bit per cell for maps that actually contain blockers. The render palette remains independent of collision. Instance timer and animation overrides allocate only for actors that use them. Native and headless rendering share depth ordering and HUD primitives. Sprite resources that point to the same PNG share one decoded buffer. Media validation uses a bounded read and checks that audio yields decoded samples at its start through the same codecs used by native playback.
 

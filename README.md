@@ -8,7 +8,7 @@ AGGE is designed to minimize the tokens a coding agent needs to build, change, a
 
 - **Read only what the change needs.** Compact, Git-friendly project files and an indexed resource graph let agents request a single field, placement, script event, or symbol reference. Batch related reads at one revision, and use a named checkpoint to retrieve changes between sessions.
 - **Describe edits at the level of intent.** A grid placement, tile stamp, or typed rename can replace pages of generated data or repeated edits. Edits support previews and replay checks before committing one undoable transaction. Concise scripts use engine primitives for game logic such as input and collision.
-- **Verify with the game runtime.** Studio copies playtests as replay JSON. Agents can test multiple named scenarios from one compiled project, sample selected values across ticks, or request a small PNG crop.
+- **Verify with the game runtime.** Studio records playtests and plays back saved replays with live assertions. Agents can test multiple named scenarios from one compiled project, sample selected values across ticks, or request a small PNG crop.
 
 AGGE targets **80–90% fewer tokens on suitable tasks**. Six scripted edit workflows measured **7.9–59.5% lower token counts** against equivalent Godot workflows. On the Bank Shot fixture, samples across six ticks used **78.7% fewer tokens** than six state snapshots. End-to-end model-session savings are still unverified. [Benchmark results and reproduction steps](bench/README.md)
 

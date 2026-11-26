@@ -121,3 +121,44 @@ fn bundled_replays_pass_through_the_cli() {
         }
     }
 }
+
+#[test]
+fn failed_single_replays_and_guards_keep_reports_small() {
+    let folder = tempfile::tempdir().unwrap();
+    let file = folder.path().join("game.agge");
+    std::fs::write(&file, "agge/1 {}\nroom main {}\n").unwrap();
+    let args = folder.path().join("args.json");
+    let run = |command, spec: Value| {
+        std::fs::write(&args, spec.to_string()).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_agge"))
+            .arg(command)
+            .arg(&file)
+            .arg(format!("@{}", args.display()))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let replay = json!({
+        "ticks":0,
+        "expect":(0..12).map(|i| json!({"at":0,"field":"room","is":format!("wrong_{i}")})).collect::<Vec<_>>()
+    });
+    let tested = run("test", replay.clone());
+    let guarded = run(
+        "edit",
+        json!({
+            "ops":[{"op":"settings","fields":{"title":"changed"}}], "verify":[replay]
+        }),
+    );
+    assert_eq!(guarded["committed"], false);
+    for report in [&tested["report"], &guarded["reports"][0]] {
+        assert_eq!(report["assertions"], 12);
+        assert_eq!(report["failures"].as_array().unwrap().len(), 8);
+        assert_eq!(report["failures"][7]["expected"], "wrong_7");
+        assert_eq!(report["omitted_failures"], 4);
+    }
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "agge/1 {}\nroom main {}\n"
+    );
+}

@@ -3,7 +3,9 @@ use agge_core::{
     script::{self, Event},
     store::{Loaded, Store},
 };
-use agge_runtime::{CompiledGame, Media, Replay, asset_info, capture, replay, replay_compiled};
+use agge_runtime::{
+    CompiledGame, Media, Replay, ReplaySuite, Report, asset_info, capture, replay, replay_compiled,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{cell::OnceCell, collections::BTreeMap};
@@ -411,7 +413,7 @@ pub fn edit(store: &Store, args: Value) -> Result<(Value, bool)> {
             for spec in &batch.verify {
                 let (_, report) = replay_compiled(&game, spec)?;
                 let passed = report.passed();
-                reports.push(report);
+                reports.push(report_json(&report, true));
                 if !passed {
                     return Ok(false);
                 }
@@ -457,21 +459,12 @@ struct Selection {
 }
 pub type Simulation = (Value, bool, Option<Vec<u8>>);
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Suite {
-    base: Option<String>,
-    #[serde(default)]
-    detail: bool,
-    cases: BTreeMap<String, Value>,
-}
-
 fn run_suite(store: &Store, args: Value, selected: Option<&str>) -> Result<Simulation> {
-    let Suite {
+    let ReplaySuite {
         base,
         detail,
         mut cases,
-    } = serde_json::from_value(args)?;
+    }: ReplaySuite<Value> = serde_json::from_value(args)?;
     if !(1..=32).contains(&cases.len()) {
         return Err(fail("suite requires 1–32 named cases"));
     }
@@ -506,22 +499,13 @@ fn run_suite(store: &Store, args: Value, selected: Option<&str>) -> Result<Simul
     let mut reports = BTreeMap::new();
     for (name, case) in replays {
         match replay_compiled(&game, &case) {
-            Ok((_, mut report)) => {
+            Ok((_, report)) => {
                 assertions += report.assertions;
                 ticks += report.ticks;
                 let passed = report.passed();
                 failed += usize::from(!passed);
                 if detail || !passed {
-                    let omitted = report.failures.len().saturating_sub(8);
-                    report.failures.truncate(8);
-                    if !detail {
-                        report.samples.clear();
-                    }
-                    let mut result = json!(report);
-                    if omitted != 0 {
-                        result["omitted_failures"] = json!(omitted);
-                    }
-                    reports.insert(name, result);
+                    reports.insert(name, report_json(&report, detail));
                 }
             }
             Err(error) => {
@@ -536,6 +520,26 @@ fn run_suite(store: &Store, args: Value, selected: Option<&str>) -> Result<Simul
         result["reports"] = json!(reports);
     }
     Ok((result, passed, None))
+}
+
+fn report_json(report: &Report, include_samples: bool) -> Value {
+    const FAILURE_LIMIT: usize = 8;
+    let mut result = json!({"ticks":report.ticks,"assertions":report.assertions});
+    if include_samples && !report.samples.is_empty() {
+        result["samples"] = json!(report.samples);
+    }
+    if !report.failures.is_empty() {
+        let shown = report.failures.len().min(FAILURE_LIMIT);
+        result["failures"] = json!(&report.failures[..shown]);
+        let omitted = report.failures.len() - shown;
+        if omitted > 0 {
+            result["omitted_failures"] = json!(omitted);
+        }
+    }
+    if let Some(fault) = &report.fault {
+        result["fault"] = json!(fault);
+    }
+    result
 }
 
 #[derive(PartialEq)]
@@ -586,7 +590,8 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
     require_revision(&loaded, base.as_deref())?;
     let (world, report) = replay(loaded.project, &replay_spec)?;
     let ok = report.passed();
-    let mut result = json!({"revision":loaded.revision,"passed":ok,"report":report});
+    let mut result =
+        json!({"revision":loaded.revision,"passed":ok,"report":report_json(&report,true)});
     if let Some(selection) = selection {
         result["state"] =
             json!(world.snapshot(selection.object.as_deref(), selection.placement.as_deref()));
@@ -622,6 +627,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"patch","kind":"object","id":"player","fields":{"gravity":480}},
             {"op":"remove","kind":"object","id":"player"},
             {"op":"rename","kind":"object","id":"player","to":"pilot"},
+            {"op":"rename_global","id":"score","to":"points"},
             {"op":"settings","fields":{"hz":60}},
             {"op":"script_event","id":"drive","event":"step","body":"  move 120 * dt, 0"},
             {"op":"splice","id":"drive","at":[3,1],"text":"  move 180 * dt, 0"},
@@ -646,7 +652,7 @@ fn guide(key: &str) -> Result<Value> {
         "sprite" => json!({"file":"art/ship.png","frames":[[0,0,16,16]]}),
         "animation" => json!({"sprite":"ship","frames":[0,1],"fps":10,"mode":"ping_pong"}),
         "script" => {
-            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\")","global(name)","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
+            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\"[,dx,dy])","global(name)","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
         }
         "tilemap" => {
             json!({"cell":16,"at":[0,0],"atlas":"terrain","tiles":{"#":[[120,140,160,255],true],"a":[0],"b":[1,true]},"rows":["###","#a#","b##"]})

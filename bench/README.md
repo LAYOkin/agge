@@ -37,6 +37,8 @@ These AGGE-only comparisons count the exact `o200k_base` tokens in the command, 
 | Inspect position and velocity at six ticks | 923 | 197 | 78.7% |
 | Retrieve the placement edit form | 366 | 37 | 89.9% |
 
+On the generated 128×128 tilemap, querying an 8×6 area takes 82 tokens, compared with 4,290 tokens to retrieve the whole map and extract the same cells locally. The harness verifies the returned rows against the full map at the same revision.
+
 ```sh
 python bench/context_cost.py --agge target/release/agge --output context-results.json
 ```
@@ -111,3 +113,18 @@ python bench/edit_speed.py --agge target/release/agge --godot /path/to/godot --s
 ```
 
 The edit timing harness includes fixture construction, edit commands, process startup, and independent verification. Across six tasks, all 30 measured runs per engine passed. AGGE's per-task medians ranged from 9.90 to 20.58 ms, and Godot's ranged from 181.28 to 578.89 ms. The totals reflect the supplied workflows and their checkers, including Godot's real-time clip test. [Per-task results and samples](timing-results.json)
+
+## Spatial overlap and static actors
+
+On Windows with a Ryzen 5 5600H, nine alternating runs compared release builds before and after indexing overlap targets and skipping static actor updates. The overlap fixture checks hit totals for 128 scripted probes among 1,024 targets over 120 ticks. Both builds passed the assertions on every run.
+
+| Replay workload | Baseline `cfe78e1` | Updated |
+| --- | ---: | ---: |
+| Overlap queries | 277.23 ms | 14.44 ms |
+| Solid-instance collision | 49.10 ms | 24.88 ms |
+| Tile collision | 29.81 ms | 31.19 ms |
+| 60,000 ticks with 4,096 input spans | 37.95 ms | 38.13 ms |
+
+```sh
+python bench/replay_speed.py /path/to/baseline/agge target/release/agge --case overlap --case collision --case tiles --case large --samples 9
+```

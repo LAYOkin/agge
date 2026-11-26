@@ -2,7 +2,8 @@ use agge_core::{
     Color, Kind, Light, Project, Resource, Result, Tilemap, fail, read_asset, store::Store,
 };
 use agge_runtime::{
-    Bounds, Draw, Input, Media, ReplayRecorder, RoomCollider, World, draw_tilemap, shade_lights,
+    Bounds, CompiledGame, Draw, Input, Media, Replay, ReplayPlayback, ReplayRecorder, RoomCollider,
+    World, draw_tilemap, shade_lights,
 };
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, Stroke, StrokeKind, TextureHandle,
@@ -35,9 +36,9 @@ pub fn run_player_in_room(file: PathBuf, room: Option<&str>) -> Result<()> {
     let store = Store::new(file);
     let project = store.load()?.project;
     let play = Play::new(project, store.root().to_owned(), room)?;
-    let title = play.world.project().settings.title.clone();
+    let title = play.world().project().settings.title.clone();
     let dims = play
-        .world
+        .world()
         .project()
         .settings
         .size
@@ -66,7 +67,7 @@ impl eframe::App for Player {
             .frame(egui::Frame::NONE.fill(Color32::BLACK))
             .show(ctx, |ui| {
                 self.canvas.play(ui, &self.play);
-                if let Some(fault) = self.play.world.fault() {
+                if let Some(fault) = self.play.world().fault() {
                     egui::Window::new("Game stopped").show(ctx, |ui| {
                         ui.label(fault.to_string());
                     });
@@ -77,8 +78,22 @@ impl eframe::App for Player {
 
 type KeyBindings = BTreeMap<Key, Input>;
 
+enum Simulation {
+    Live(Box<World>),
+    Replay(Box<ReplayPlayback<Arc<Replay>>>),
+}
+
+impl Simulation {
+    fn world(&self) -> &World {
+        match self {
+            Self::Live(world) => world,
+            Self::Replay(replay) => replay.world(),
+        }
+    }
+}
+
 pub struct Play {
-    pub world: World,
+    simulation: Simulation,
     pub media: Media,
     pub paused: bool,
     pub audio: AudioOutput,
@@ -92,13 +107,32 @@ pub struct Play {
 }
 impl Play {
     pub fn new(project: Project, root: PathBuf, room: Option<&str>) -> Result<Self> {
-        let media = Media::load(&project, &root)?;
         let bindings = compile_bindings(&project);
         let world = World::preview(project, room)?;
+        Self::start(Simulation::Live(Box::new(world)), root, bindings, false)
+    }
+
+    pub fn from_replay(project: Project, root: PathBuf, replay: Arc<Replay>) -> Result<Self> {
+        let playback = ReplayPlayback::new(&CompiledGame::new(project)?, replay)?;
+        Self::start(
+            Simulation::Replay(Box::new(playback)),
+            root,
+            KeyBindings::new(),
+            true,
+        )
+    }
+
+    fn start(
+        simulation: Simulation,
+        root: PathBuf,
+        bindings: KeyBindings,
+        paused: bool,
+    ) -> Result<Self> {
+        let media = Media::load(simulation.world().project(), &root)?;
         let mut play = Self {
-            world,
+            simulation,
             media,
-            paused: false,
+            paused,
             audio: AudioOutput::default(),
             recording: None,
             root,
@@ -108,16 +142,42 @@ impl Play {
             bindings,
             music_id: None,
         };
-        if play.world.fault().is_none() {
+        if play.world().fault().is_none() {
             play.audio();
         }
         Ok(play)
     }
+
+    pub fn world(&self) -> &World {
+        self.simulation.world()
+    }
+
+    pub fn playback(&self) -> Option<&ReplayPlayback<Arc<Replay>>> {
+        match &self.simulation {
+            Simulation::Live(_) => None,
+            Simulation::Replay(replay) => Some(replay),
+        }
+    }
+
+    pub fn can_advance(&self) -> bool {
+        self.world().fault().is_none() && self.playback().is_none_or(|replay| !replay.finished())
+    }
+
     fn audio(&mut self) {
-        if self.music_id != self.world.room().music {
-            self.music_id.clone_from(&self.world.room().music);
+        let (world, sounds) = match &mut self.simulation {
+            Simulation::Live(world) => {
+                let sounds = world.drain_audio();
+                (&**world, sounds)
+            }
+            Simulation::Replay(replay) => {
+                let sounds = replay.drain_audio();
+                (replay.world(), sounds)
+            }
+        };
+        if self.music_id != world.room().music {
+            self.music_id.clone_from(&world.room().music);
             let music = self.music_id.as_deref().and_then(|id| {
-                match self.world.project().get(Kind::Audio, id) {
+                match world.project().get(Kind::Audio, id) {
                     Some(Resource::Audio(audio)) => Some((audio.file.as_str(), audio.gain)),
                     _ => None,
                 }
@@ -125,34 +185,51 @@ impl Play {
             self.audio.music(&self.root, music);
             self.audio.pause_music(self.paused);
         }
-        for id in self.world.drain_audio() {
-            if let Some(Resource::Audio(audio)) = self.world.project().get(Kind::Audio, &id) {
+        for id in sounds {
+            if let Some(Resource::Audio(audio)) = world.project().get(Kind::Audio, &id) {
                 self.audio.fire(&self.root, &audio.file, audio.gain);
             }
         }
     }
     pub fn step(&mut self, ctx: &egui::Context) {
-        if self.world.fault().is_none() {
-            let (mut input, pressed, _) = actions(ctx, &self.bindings);
+        if self.can_advance() {
+            let (mut input, pressed, _) = self.read_input(ctx);
             input.extend(pressed);
             self.advance(&input);
         }
     }
     fn advance(&mut self, input: &Input) {
-        if let Some(recording) = &mut self.recording {
-            recording.record(input);
-        }
-        if self.world.tick(input).is_ok() {
+        let ok = match &mut self.simulation {
+            Simulation::Live(world) => {
+                if let Some(recording) = &mut self.recording {
+                    recording.record(input);
+                }
+                world.tick(input).is_ok()
+            }
+            Simulation::Replay(replay) => {
+                replay.step();
+                replay.report().fault.is_none()
+            }
+        };
+        if ok {
             self.audio();
+        }
+    }
+
+    fn read_input(&self, ctx: &egui::Context) -> (Input, Input, bool) {
+        if self.playback().is_some() {
+            (Input::new(), Input::new(), false)
+        } else {
+            actions(ctx, &self.bindings)
         }
     }
     pub fn update(&mut self, ctx: &egui::Context) {
         self.update_at(ctx, Instant::now());
     }
     fn update_at(&mut self, ctx: &egui::Context, now: Instant) {
-        self.audio
-            .pause_music(self.paused || self.world.fault().is_some());
-        if self.world.fault().is_some() {
+        let can_advance = self.can_advance();
+        self.audio.pause_music(self.paused || !can_advance);
+        if !can_advance {
             return;
         }
         if self.paused {
@@ -161,11 +238,11 @@ impl Play {
             self.pending.clear();
             return;
         }
-        let dt = 1. / self.world.project().settings.hz as f64;
+        let dt = 1. / self.world().project().settings.hz as f64;
         if let Some(last) = self.last.replace(now) {
             self.elapsed += (now - last).as_secs_f64().min(0.25);
         }
-        let (held, pressed, reset_pending) = actions(ctx, &self.bindings);
+        let (held, pressed, reset_pending) = self.read_input(ctx);
         if reset_pending {
             self.pending.clear();
         }
@@ -178,8 +255,9 @@ impl Play {
             let mut input = held.clone();
             input.append(&mut self.pending);
             self.advance(&input);
-            if self.world.fault().is_some() {
-                break;
+            if !self.can_advance() {
+                self.audio.pause_music(true);
+                return;
             }
         }
         self.elapsed = self.elapsed.min(dt);
@@ -335,6 +413,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_replay_starts_paused_and_stops_at_the_last_recorded_tick() {
+        let project = Project::parse(
+            r#"agge/1 {}
+room main {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+script drive
+step:
+  move down("fire"), 0
+---
+"#,
+        )
+        .unwrap();
+        let spec = serde_json::from_str(
+            r#"{"ticks":2,"input":[[1,2,"fire"]],"expect":[{"at":2,"field":"entity/hero/x","is":2}]}"#,
+        ).unwrap();
+        let mut play = Play::from_replay(project, PathBuf::new(), Arc::new(spec)).unwrap();
+        let ctx = egui::Context::default();
+        assert!(play.paused);
+        play.update(&ctx);
+        assert_eq!(play.playback().unwrap().report().ticks, 0);
+        for _ in 0..3 {
+            play.step(&ctx);
+        }
+        assert!(!play.can_advance());
+        let report = play.playback().unwrap().report();
+        assert_eq!(report.ticks, 2);
+        assert_eq!(report.assertions, 1);
+        assert!(report.passed(), "{report:?}");
+    }
+
+    #[test]
     fn compiled_bindings_preserve_defaults_and_case_insensitive_overrides() {
         let mut project = Project::default();
         project.settings.bindings = BTreeMap::from([
@@ -402,18 +511,18 @@ mod tests {
         let first_frame = Instant::now() + Duration::from_secs(2);
         let frame_time = Duration::from_millis(20);
         play.update_at(&ctx, first_frame);
-        assert_eq!(play.world.snapshot(None, None).tick, 0);
+        assert_eq!(play.world().snapshot(None, None).tick, 0);
         play.update_at(&ctx, first_frame + frame_time);
-        assert_eq!(play.world.snapshot(None, None).tick, 1);
+        assert_eq!(play.world().snapshot(None, None).tick, 1);
 
         play.paused = true;
         play.update_at(&ctx, first_frame + Duration::from_secs(1));
         play.paused = false;
         let resume = first_frame + Duration::from_secs(3);
         play.update_at(&ctx, resume);
-        assert_eq!(play.world.snapshot(None, None).tick, 1);
+        assert_eq!(play.world().snapshot(None, None).tick, 1);
         play.update_at(&ctx, resume + frame_time);
-        assert_eq!(play.world.snapshot(None, None).tick, 2);
+        assert_eq!(play.world().snapshot(None, None).tick, 2);
     }
 
     #[test]
@@ -446,12 +555,12 @@ impl Canvas {
     }
 
     pub fn play_with_colliders(&mut self, ui: &mut Ui, play: &Play, show_colliders: bool) {
-        let size = play.world.project().settings.size;
+        let size = play.world().project().settings.size;
         let screen = fit(ui.available_rect_before_wrap(), size);
         let painter = ui.painter_at(screen);
-        painter.rect_filled(screen, 0., color(play.world.room().bg));
+        painter.rect_filled(screen, 0., color(play.world().room().bg));
         let scale = screen.width() / size[0] as f32;
-        let [x, y] = play.world.camera();
+        let [x, y] = play.world().camera();
         let world_origin = screen.min - Vec2::new(x, y) * scale;
         let mut draw = |shape| {
             self.paint(
@@ -460,14 +569,14 @@ impl Canvas {
                 world_origin,
                 scale,
                 &play.media,
-                play.world.project(),
+                play.world().project(),
                 shape,
             )
         };
-        play.world.draw_scene(play.world.view(), &mut draw);
-        self.lighting(&painter, screen, &play.world);
+        play.world().draw_scene(play.world().view(), &mut draw);
+        self.lighting(&painter, screen, play.world());
         if show_colliders {
-            play.world.visit_colliders(|collider| {
+            play.world().visit_colliders(|collider| {
                 paint_collider(&painter, world_origin, scale, collider);
             });
         }
@@ -478,11 +587,11 @@ impl Canvas {
                 screen.min,
                 scale,
                 &play.media,
-                play.world.project(),
+                play.world().project(),
                 shape,
             )
         };
-        play.world.draw_ui(&mut draw);
+        play.world().draw_ui(&mut draw);
         ui.allocate_rect(screen, egui::Sense::hover());
     }
     fn sprite_texture(

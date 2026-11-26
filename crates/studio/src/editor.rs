@@ -4,10 +4,10 @@ use agge_core::{
     store::{Loaded, Store},
     valid_id,
 };
-use agge_runtime::Media;
+use agge_runtime::{Media, Replay, ReplaySuite};
 use agge_studio::{AudioOutput, Canvas, Play};
 use eframe::egui::{self, Color32, Context, RichText, Ui};
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 pub const MINT: Color32 = Color32::from_rgb(149, 234, 210);
 pub const MUTED: Color32 = Color32::from_rgb(153, 165, 185);
@@ -189,6 +189,61 @@ impl Draft {
         Resource::parse(self.kind, &self.raw)
     }
 }
+#[derive(Default)]
+struct ReplayDraft {
+    json: String,
+    case: String,
+    error: Option<String>,
+}
+
+impl ReplayDraft {
+    fn parse(&self, revision: &str) -> Result<Replay> {
+        if self.json.len() > 4 * 1024 * 1024 {
+            return Err(fail("Replay exceeds 4 MiB"));
+        }
+        let mut value: serde_json::Value =
+            serde_json::from_str(self.json.trim_start_matches('\u{feff}'))?;
+        let case = self.case.trim();
+        if value.get("cases").is_some() {
+            let mut suite: ReplaySuite<serde_json::Value> = serde_json::from_value(value)?;
+            if !(1..=32).contains(&suite.cases.len()) {
+                return Err(fail("Suite requires 1–32 named cases"));
+            }
+            check_replay_base(suite.base.as_deref(), revision)?;
+            if !valid_id(case) || !suite.cases.contains_key(case) {
+                let names = suite
+                    .cases
+                    .keys()
+                    .filter(|name| valid_id(name))
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(fail(format!("Choose a case from the suite ({names})")));
+            }
+            value = suite.cases.remove(case).expect("selected case exists");
+        } else {
+            if !case.is_empty() {
+                return Err(fail("A case name requires a replay suite"));
+            }
+            let base = value
+                .as_object_mut()
+                .and_then(|fields| fields.remove("base"));
+            let base: Option<String> = base.map(serde_json::from_value).transpose()?.flatten();
+            check_replay_base(base.as_deref(), revision)?;
+        }
+        Ok(serde_json::from_value(value)?)
+    }
+}
+
+fn check_replay_base(base: Option<&str>, revision: &str) -> Result<()> {
+    if base.is_some_and(|base| base != revision) {
+        return Err(fail(format!(
+            "Replay revision differs from the open project ({revision})"
+        )));
+    }
+    Ok(())
+}
+
 pub struct Workbench {
     pub store: Store,
     pub loaded: Loaded,
@@ -211,6 +266,7 @@ pub struct Workbench {
     play_colliders: bool,
     jump_line: Option<usize>,
     close_prompt: bool,
+    replay_draft: Option<ReplayDraft>,
 }
 impl Workbench {
     fn open(store: Store) -> Result<Self> {
@@ -242,6 +298,7 @@ impl Workbench {
             play_colliders: false,
             jump_line: None,
             close_prompt: false,
+            replay_draft: None,
         };
         let start = this.loaded.project.settings.start.clone();
         this.select(Kind::Room, &start);
@@ -451,6 +508,14 @@ impl Workbench {
         self.reload()
     }
     fn play(&mut self) -> Result<()> {
+        if let Some(spec) = self
+            .play
+            .as_ref()
+            .and_then(Play::playback)
+            .map(|replay| Arc::clone(replay.spec()))
+        {
+            return self.play_replay(spec);
+        }
         self.save()?;
         let room = self
             .draft
@@ -469,6 +534,16 @@ impl Workbench {
         play.paused = self.play.as_ref().is_some_and(|current| current.paused);
         self.play = Some(play);
         self.play_canvas = Canvas::default();
+        Ok(())
+    }
+    fn play_replay(&mut self, spec: Arc<Replay>) -> Result<()> {
+        self.play = Some(Play::from_replay(
+            self.loaded.project.clone(),
+            self.store.root().to_owned(),
+            spec,
+        )?);
+        self.play_canvas = Canvas::default();
+        self.inspect = true;
         Ok(())
     }
     fn command(&mut self, command: impl FnOnce(&mut Self) -> Result<()>) {
@@ -533,12 +608,12 @@ impl Workbench {
                     self.play = None;
                 } else if ui
                     .button("Restart")
-                    .on_hover_text("Restart from the starting room with a new replay recording.")
+                    .on_hover_text("Return to the starting room at tick 0.")
                     .clicked()
                 {
                     self.command(Self::play);
                 } else {
-                    let fault = play.world.fault();
+                    let fault = play.world().fault();
                     if let Some(fault) = fault {
                         if let Some((script, line)) = fault.location()
                             && ui.button("Open fault source").clicked()
@@ -551,7 +626,7 @@ impl Workbench {
                             self.note(message, true);
                             return;
                         }
-                    } else {
+                    } else if play.can_advance() {
                         if ui
                             .button(if play.paused { "Resume" } else { "Pause" })
                             .clicked()
@@ -590,6 +665,12 @@ impl Workbench {
                     .clicked()
                 {
                     self.command(Self::play);
+                }
+                if ui
+                    .add_enabled(!self.dirty(), egui::Button::new("Replay…"))
+                    .clicked()
+                {
+                    self.replay_draft = Some(ReplayDraft::default());
                 }
                 if ui
                     .add_enabled(self.dirty(), egui::Button::new("Apply"))
@@ -704,6 +785,39 @@ impl Workbench {
         });
     }
     fn dialogs(&mut self, ctx: &Context) {
+        if let Some(mut draft) = self.replay_draft.take() {
+            let dialog = egui::Modal::new(egui::Id::new("replay")).show(ctx, |ui| {
+                ui.heading("Open replay");
+                ui.label("Paste the replay JSON.");
+                ui.add(
+                    egui::TextEdit::multiline(&mut draft.json)
+                        .code_editor()
+                        .desired_width(540.)
+                        .desired_rows(9),
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Case (for suites)");
+                    ui.text_edit_singleline(&mut draft.case);
+                });
+                if let Some(error) = &draft.error {
+                    ui.colored_label(Color32::LIGHT_RED, error);
+                }
+                ui.horizontal(|ui| (ui.button("Open").clicked(), ui.button("Cancel").clicked()))
+                    .inner
+            });
+            let (open, cancel) = dialog.inner;
+            if open {
+                let result = draft
+                    .parse(&self.loaded.revision)
+                    .and_then(|spec| self.play_replay(Arc::new(spec)));
+                if let Err(error) = result {
+                    draft.error = Some(error.to_string());
+                    self.replay_draft = Some(draft);
+                }
+            } else if !cancel && !dialog.should_close() {
+                self.replay_draft = Some(draft);
+            }
+        }
         if let Some(mut draft) = self.settings.take() {
             let dialog = egui::Modal::new(egui::Id::new("project_settings")).show(ctx, |ui| {
                 let settings = &mut draft.settings;
@@ -842,6 +956,7 @@ impl Workbench {
     }
     fn ui(&mut self, ctx: &Context) {
         let dialog_open = self.close_prompt
+            || self.replay_draft.is_some()
             || self.settings.is_some()
             || self.create.is_some()
             || self.rename.is_some();
@@ -868,7 +983,7 @@ impl Workbench {
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let status = self.play.as_ref().and_then(|play| {
-                    play.world
+                    play.world()
                         .fault()
                         .map(ToString::to_string)
                         .or_else(|| play.audio.problem().map(str::to_owned))
@@ -898,7 +1013,7 @@ impl Workbench {
         if let Some(play) = &mut self.play {
             play.update(ctx);
             if self.inspect {
-                let state = play.world.snapshot(None, None);
+                let state = play.world().snapshot(None, None);
                 egui::SidePanel::right("runtime_inspector")
                     .default_width(253.)
                     .show(ctx, |ui| {
@@ -924,7 +1039,7 @@ impl Workbench {
                                 .monospace()
                                 .color(MINT),
                         );
-                        if play.world.room().size.is_some() || state.camera != [0., 0.] {
+                        if play.world().room().size.is_some() || state.camera != [0., 0.] {
                             ui.monospace(format!(
                                 "Camera {:.1}, {:.1}",
                                 state.camera[0], state.camera[1]
@@ -937,6 +1052,40 @@ impl Workbench {
                         ));
                         ui.checkbox(&mut self.play_colliders, "Colliders")
                             .on_hover_text("Show collision geometry in the current camera view.");
+                        if let Some(replay) = play.playback() {
+                            let report = replay.report();
+                            ui.separator();
+                            ui.label(format!(
+                                "Replay · {}/{} ticks",
+                                report.ticks,
+                                replay.spec().ticks
+                            ));
+                            ui.label(format!(
+                                "{} / {} assertions checked",
+                                report.assertions,
+                                replay.spec().expect.len()
+                            ));
+                            if let Some(failure) = report.failures.first() {
+                                ui.colored_label(
+                                    Color32::LIGHT_RED,
+                                    format!(
+                                        "{} failed · first at tick {}\n{}\nExpected {:?}, got {:?}",
+                                        report.failures.len(),
+                                        failure.at,
+                                        failure.field,
+                                        failure.expected,
+                                        failure.actual
+                                    ),
+                                );
+                            } else if replay.finished() && report.passed() {
+                                ui.colored_label(MINT, "Replay completed");
+                            }
+                            if ui.button("Copy report").clicked()
+                                && let Ok(json) = serde_json::to_string(report)
+                            {
+                                ui.ctx().copy_text(json);
+                            }
+                        }
                         ui.separator();
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             for (key, value) in state.globals {
@@ -950,7 +1099,7 @@ impl Workbench {
                                             ui.monospace(format!("{} · {}", e.id, e.object));
                                             ui.label(format!("Position {:.1}, {:.1}", e.x, e.y));
                                             ui.label(format!("Velocity {:.1}, {:.1}", e.vx, e.vy));
-                                            if play.world.grounded(e) {
+                                            if play.world().grounded(e) {
                                                 ui.label("Grounded");
                                             }
                                             for (key, value) in &e.vars {
@@ -1070,7 +1219,9 @@ impl Workbench {
                                                 ("Used by", &edge.from, edge.at.as_str())
                                             };
                                             let label = format!("{direction} {target}");
-                                            if target.starts_with("asset/") {
+                                            if target.starts_with("asset/")
+                                                || target.starts_with("global/")
+                                            {
                                                 ui.label(label).on_hover_text(&edge.at);
                                             } else if ui
                                                 .link(label)
@@ -1155,5 +1306,30 @@ fn edit_source(ui: &mut Ui, entry: &mut Draft, jump_line: Option<usize>) {
             .pos_from_cursor(cursor)
             .translate(output.galley_pos.to_vec2());
         ui.scroll_to_rect(rect, Some(egui::Align::Center));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replay_dialog_selects_one_case_and_checks_the_project_revision() {
+        let mut draft = ReplayDraft {
+            json: r#"{"base":"rev","cases":{"ready":{"ticks":0,"seed":12},"broken":{"typo":1}}}"#
+                .into(),
+            case: "ready".into(),
+            error: None,
+        };
+        assert_eq!(draft.parse("rev").unwrap().seed, Some(12));
+        assert!(draft.parse("other").is_err());
+        draft.case = "other".into();
+        assert!(
+            draft
+                .parse("rev")
+                .unwrap_err()
+                .to_string()
+                .contains("ready")
+        );
     }
 }

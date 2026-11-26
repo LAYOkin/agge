@@ -1,9 +1,124 @@
 use agge_core::Project;
 use agge_runtime::{
-    CompiledGame, Input, Media, Replay, ReplayRecorder, Scalar, capture, pick_placement, replay,
-    replay_compiled,
+    CompiledGame, Input, Media, Replay, ReplayPlayback, ReplayRecorder, Scalar, capture,
+    pick_placement, replay, replay_compiled,
 };
 use std::path::Path;
+
+#[test]
+fn stepped_playback_observes_input_edges_and_sounds_before_audio_is_drained() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+audio ping {"file":"ping.wav"}
+script drive
+create:
+  sound ping
+step:
+  if pressed("fire") || released("fire")
+    sound ping
+  end
+  move down("fire"), 0
+---
+"#,
+    )
+    .unwrap();
+    let spec: Replay = serde_json::from_str(
+        r#"{"ticks":4,"input":[[1,2,"fire"],[2,3,"fire"],[3,3,"fire"]],"expect":[
+            {"at":0,"field":"sound/ping","is":1},
+            {"at":1,"field":"sound/ping","is":1},
+            {"at":3,"field":"sound/ping","is":0},
+            {"at":4,"field":"sound/ping","is":1},
+            {"at":4,"field":"entity/hero/x","is":3}
+        ],"sample":{"at":[4,0],"fields":["entity/hero/x","sound/ping"]}}"#,
+    )
+    .unwrap();
+    let game = CompiledGame::new(project).unwrap();
+    let (_, expected) = replay_compiled(&game, &spec).unwrap();
+    let mut stepped = ReplayPlayback::new(&game, spec).unwrap();
+    assert_eq!(stepped.report().assertions, 1);
+    assert_eq!(stepped.drain_audio(), ["ping"]);
+    while !stepped.finished() {
+        stepped.step();
+        stepped.drain_audio();
+    }
+    stepped.step();
+    assert_eq!(stepped.world().snapshot(None, None).tick, 4);
+    assert!(stepped.report().passed(), "{:?}", stepped.report());
+    assert_eq!(
+        serde_json::to_value(stepped.report()).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
+}
+
+#[test]
+fn touch_probes_follow_moving_and_destroyed_targets_across_cells() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {"instances":[["target","target",63,0],["probe","probe",56,0]]}
+object target {"size":[6,6],"layer":0,"script":"target"}
+object probe {"size":[6,6],"mask":0,"script":"probe"}
+script target
+step:
+  if tick == 2
+    destroy
+  else
+    set x = 129
+  end
+---
+script probe
+fn ahead(dx) = touch("target", dx, 0)
+create:
+  global near = ahead(2)
+step:
+  global near = ahead(2)
+  global far = ahead(75)
+  global self = touch("probe")
+---
+"#,
+    )
+    .unwrap();
+    let spec = serde_json::from_value(serde_json::json!({"ticks":2,"expect":[
+        {"at":0,"field":"global/near","is":1},
+        {"at":1,"field":"global/near","is":0},
+        {"at":1,"field":"global/far","is":1},
+        {"at":1,"field":"global/self","is":0},
+        {"at":2,"field":"global/far","is":0}
+    ]}))
+    .unwrap();
+    let (_, report) = replay(project, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+}
+
+#[test]
+fn create_only_actors_keep_moving_and_hit_static_geometry() {
+    let project = Project::parse(
+        r#"agge/1 {"hz":1}
+room main {"instances":[["mover","mover",0,0],["wall","wall",10,0]]}
+object mover {"script":"launch","size":[2,2]}
+object wall {"solid":true,"size":[2,2]}
+script launch
+create:
+  set vx = 4
+hit_x:
+  global impact_speed = impact()
+---
+"#,
+    )
+    .unwrap();
+    let spec = serde_json::from_str(
+        r#"{"ticks":4,"expect":[
+        {"at":1,"field":"entity/mover/x","is":4},
+        {"at":3,"field":"entity/mover/x","is":8},
+        {"at":4,"field":"entity/mover/vx","is":0},
+        {"at":4,"field":"global/impact_speed","is":4}
+    ]}"#,
+    )
+    .unwrap();
+    let (_, report) = replay(project, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+}
 
 #[test]
 fn bundled_games_are_playable_and_repeatable() {

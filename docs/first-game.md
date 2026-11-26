@@ -63,6 +63,8 @@ That test uses the default rate of 60 ticks per second. It checks the same movem
 
 To capture a playtest in Studio, press **Play**, perform the sequence, and select **Copy replay** while the playtest is still open. You can pause before copying to hold the end tick. Paste the JSON into `movement.json` and add an `expect` array for the outcomes you want to preserve. The recording stores action spans, the starting room, and the random seed used by the playtest. It includes manual steps and stops recording at the replay size limits.
 
+To watch a saved run, select **Replay…** in Studio while the game is stopped and paste the JSON. If you paste a suite, enter the case name. The replay opens paused at tick 0. Choose **Step** to advance one tick or **Resume** to play through at the game’s tick rate. The Runtime inspector shows assertion progress and the first failure. **Copy report** copies the checks and observations already reached. Use **Restart** to return to tick 0 with the same inputs and seed.
+
 Choose **Restart** during a playtest to return to its starting room at tick 0 and begin a new recording. A paused playtest stays paused. Copy the current replay first if you want to keep it.
 
 Open **Runtime inspector** and choose **Copy state** to copy a JSON snapshot of the current tick. Pause first if you want the state to stay fixed while you inspect it.

@@ -1,7 +1,7 @@
 use crate::{CompiledGame, Fault, Input, World};
 use agge_core::{Project, Result, fail, valid_id};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{borrow::Borrow, collections::BTreeMap, iter::Peekable, vec::IntoIter};
 
 const TICK_LIMIT: u32 = 60_000;
 const SPAN_LIMIT: usize = 4096;
@@ -25,6 +25,18 @@ pub struct Replay {
     #[serde(default, skip_serializing_if = "Samples::is_empty")]
     pub sample: Samples,
 }
+
+/// Named replay cases are decoded individually so a caller can select one case
+/// even when another case in the file is malformed.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaySuite<T> {
+    pub base: Option<String>,
+    #[serde(default)]
+    pub detail: bool,
+    pub cases: BTreeMap<String, T>,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Sample(pub u32, pub String);
 
@@ -53,13 +65,10 @@ impl Samples {
         self.len() == 0
     }
 
-    fn points(&self) -> Vec<(u32, &str)> {
+    fn point(&self, index: usize) -> (u32, &str) {
         match self {
-            Self::Points(points) => points.iter().map(|s| (s.0, s.1.as_str())).collect(),
-            Self::Grid { at, fields } => at
-                .iter()
-                .flat_map(|&tick| fields.iter().map(move |field| (tick, field.as_str())))
-                .collect(),
+            Self::Points(points) => (points[index].0, &points[index].1),
+            Self::Grid { at, fields } => (at[index / fields.len()], &fields[index % fields.len()]),
         }
     }
 }
@@ -169,82 +178,147 @@ pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
 }
 
 pub fn replay_compiled(game: &CompiledGame, spec: &Replay) -> Result<(World, Report)> {
-    if spec.ticks > TICK_LIMIT
-        || spec.input.len() > SPAN_LIMIT
-        || spec.expect.len() > 4096
-        || spec.sample.len() > 256
-        || spec
+    let mut playback = ReplayPlayback::new(game, spec)?;
+    while !playback.finished() {
+        playback.step();
+    }
+    Ok((playback.world, playback.report))
+}
+
+/// Drive a replay one tick at a time and verify observations before the caller
+/// renders the resulting world or consumes its queued audio.
+pub struct ReplayPlayback<S> {
+    spec: S,
+    world: World,
+    report: Report,
+    assertions: Peekable<IntoIter<usize>>,
+    samples: Peekable<IntoIter<(u32, usize)>>,
+    changes: Peekable<IntoIter<(u32, usize, bool)>>,
+    counts: BTreeMap<String, usize>,
+    input: Input,
+}
+
+impl<S: Borrow<Replay>> ReplayPlayback<S> {
+    pub fn new(game: &CompiledGame, spec: S) -> Result<Self> {
+        let replay = spec.borrow();
+        if replay.ticks > TICK_LIMIT
+            || replay.input.len() > SPAN_LIMIT
+            || replay.expect.len() > 4096
+            || replay.sample.len() > 256
+            || replay
+                .input
+                .iter()
+                .any(|InputSpan(a, b, key)| *a == 0 || a > b || *b > replay.ticks || !valid_id(key))
+            || replay
+                .expect
+                .iter()
+                .any(|a| a.at > replay.ticks || !a.tolerance.is_finite() || a.tolerance < 0.)
+        {
+            return Err(fail("invalid replay ticks, input ranges or assertions"));
+        }
+        let mut samples = (0..replay.sample.len())
+            .map(|index| (replay.sample.point(index).0, index))
+            .collect::<Vec<_>>();
+        if samples.iter().any(|(tick, _)| *tick > replay.ticks) {
+            return Err(fail("sample tick exceeds replay length"));
+        }
+        samples.sort_unstable();
+        let mut assertions = (0..replay.expect.len()).collect::<Vec<_>>();
+        assertions.sort_by_key(|&index| replay.expect[index].at);
+        let mut changes = replay
             .input
             .iter()
-            .any(|InputSpan(a, b, key)| *a == 0 || a > b || *b > spec.ticks || !valid_id(key))
-        || spec
-            .expect
-            .iter()
-            .any(|a| a.at > spec.ticks || !a.tolerance.is_finite() || a.tolerance < 0.)
-    {
-        return Err(fail("invalid replay ticks, input ranges or assertions"));
+            .enumerate()
+            .flat_map(|(index, InputSpan(first, last, _))| {
+                [(*first, index, true), (*last + 1, index, false)]
+            })
+            .collect::<Vec<_>>();
+        changes.sort_unstable_by_key(|(tick, _, _)| *tick);
+        let world = game.preview_seeded(replay.room.as_deref(), replay.seed)?;
+        let report = Report {
+            ticks: 0,
+            assertions: 0,
+            samples: vec![None; replay.sample.len()],
+            failures: vec![],
+            fault: world.fault().cloned(),
+        };
+        let mut playback = Self {
+            spec,
+            world,
+            report,
+            assertions: assertions.into_iter().peekable(),
+            samples: samples.into_iter().peekable(),
+            changes: changes.into_iter().peekable(),
+            counts: BTreeMap::new(),
+            input: Input::new(),
+        };
+        if playback.report.fault.is_none() {
+            playback.observe(0);
+        }
+        Ok(playback)
     }
-    let mut samples = spec
-        .sample
-        .points()
-        .into_iter()
-        .enumerate()
-        .collect::<Vec<_>>();
-    if samples.iter().any(|(_, (tick, _))| *tick > spec.ticks) {
-        return Err(fail("sample tick exceeds replay length"));
+
+    pub fn spec(&self) -> &S {
+        &self.spec
     }
-    let mut world = game.preview_seeded(spec.room.as_deref(), spec.seed)?;
-    let mut report = Report {
-        ticks: 0,
-        assertions: 0,
-        samples: vec![None; spec.sample.len()],
-        failures: vec![],
-        fault: world.fault().cloned(),
-    };
-    if report.fault.is_some() {
-        return Ok((world, report));
+
+    pub fn world(&self) -> &World {
+        &self.world
     }
-    let mut assertions = spec.expect.iter().collect::<Vec<_>>();
-    assertions.sort_by_key(|a| a.at);
-    let mut assertions = assertions.into_iter().peekable();
-    samples.sort_unstable_by_key(|(_, (tick, _))| *tick);
-    let mut samples = samples.into_iter().peekable();
-    let mut changes = spec
-        .input
-        .iter()
-        .flat_map(|InputSpan(first, last, action)| {
-            [(*first, action, true), (*last + 1, action, false)]
-        })
-        .collect::<Vec<_>>();
-    changes.sort_unstable_by_key(|(tick, _, _)| *tick);
-    let mut changes = changes.into_iter().peekable();
-    let mut counts = BTreeMap::new();
-    let mut input = Input::new();
-    for time in 0..=spec.ticks {
-        if time > 0 {
-            while let Some((_, action, start)) = changes.next_if(|(tick, _, _)| *tick == time) {
-                let count = counts.entry(action).or_insert(0usize);
-                if start {
-                    if *count == 0 {
-                        input.insert(action.clone());
-                    }
+
+    pub fn report(&self) -> &Report {
+        &self.report
+    }
+
+    pub fn finished(&self) -> bool {
+        self.report.fault.is_some() || self.report.ticks == u64::from(self.spec.borrow().ticks)
+    }
+
+    pub fn drain_audio(&mut self) -> Vec<String> {
+        self.world.drain_audio()
+    }
+
+    pub fn step(&mut self) {
+        if self.finished() {
+            return;
+        }
+        let time = self.report.ticks as u32 + 1;
+        let spec = self.spec.borrow();
+        while let Some((_, index, start)) = self.changes.next_if(|(tick, _, _)| *tick == time) {
+            let action = &spec.input[index].2;
+            if start {
+                if let Some(count) = self.counts.get_mut(action) {
                     *count += 1;
                 } else {
-                    *count -= 1;
-                    if *count == 0 {
-                        input.remove(action);
-                    }
+                    self.counts.insert(action.clone(), 1);
+                    self.input.insert(action.clone());
+                }
+            } else {
+                let count = self.counts.get_mut(action).expect("span already started");
+                *count -= 1;
+                if *count == 0 {
+                    self.input.remove(action);
+                    self.counts.remove(action);
                 }
             }
-            if let Err(error) = world.tick(&input) {
-                report.fault = Some(error);
-                break;
-            }
-            report.ticks = u64::from(time);
         }
-        while let Some(assertion) = assertions.next_if(|a| a.at == time) {
-            report.assertions += 1;
-            let actual = read(&world, &assertion.field);
+        if let Err(error) = self.world.tick(&self.input) {
+            self.report.fault = Some(error);
+            return;
+        }
+        self.report.ticks = u64::from(time);
+        self.observe(time);
+    }
+
+    fn observe(&mut self, time: u32) {
+        let spec = self.spec.borrow();
+        while let Some(index) = self
+            .assertions
+            .next_if(|index| spec.expect[*index].at == time)
+        {
+            let assertion = &spec.expect[index];
+            self.report.assertions += 1;
+            let actual = read(&self.world, &assertion.field);
             let equal = match (&actual, &assertion.is) {
                 (Some(Scalar::Number(actual)), Scalar::Number(expected)) => {
                     (actual - expected).abs() <= assertion.tolerance
@@ -253,7 +327,7 @@ pub fn replay_compiled(game: &CompiledGame, spec: &Replay) -> Result<(World, Rep
                 (None, _) => false,
             };
             if !equal {
-                report.failures.push(Failure {
+                self.report.failures.push(Failure {
                     at: time,
                     field: assertion.field.clone(),
                     expected: assertion.is.clone(),
@@ -261,11 +335,10 @@ pub fn replay_compiled(game: &CompiledGame, spec: &Replay) -> Result<(World, Rep
                 });
             }
         }
-        while let Some((position, (_, field))) = samples.next_if(|(_, (tick, _))| *tick == time) {
-            report.samples[position] = read(&world, field);
+        while let Some((_, index)) = self.samples.next_if(|(tick, _)| *tick == time) {
+            self.report.samples[index] = read(&self.world, spec.sample.point(index).1);
         }
     }
-    Ok((world, report))
 }
 
 fn read(world: &World, field: &str) -> Option<Scalar> {

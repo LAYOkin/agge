@@ -116,6 +116,8 @@ At each tick, entities run in increasing ID order. After an entity's step, gravi
 
 `layer` and `mask` are unsigned 16-bit sets. A moving object stops against a solid or one-way object when its mask intersects the obstacle's layer. Tiles use layer value `1`. By default objects are on layer `1` and check all layers. A mask of `0` ignores every blocker. Overlap queries through `touch` are independent of movement masks.
 
+`touch("object", dx, dy)` tests the actor's bounds at an offset in pixels without moving it. It checks overlap at that location and does not sweep the path. Omit both offsets to test the current position. Only other live instances of the named object in the current room can match.
+
 ### Animation and cooldowns
 
 `animate` preserves elapsed time when the requested clip is already active. Pass `true` to restart it. `once` plays each frame for its normal duration and holds the last one. `anim_done()` returns `1` after the full duration of a one-shot clip. `ping_pong` alternates direction without duplicating the end frames. Clip timing advances on simulation ticks.

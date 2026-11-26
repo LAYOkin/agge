@@ -6,6 +6,62 @@ fn edit(json: serde_json::Value) -> Edit {
 }
 
 #[test]
+fn global_rename_follows_script_tokens_and_hud_fields_without_merging_symbols() {
+    let mut project = Project::parse(
+        r#"agge/1 {}
+room main {"ui":[{"at":[0,0],"text":"score","value":"score"}],"meters":[{"at":[0,0],"size":[40,4],"value":"score","max":10}]}
+script drive
+fn read() = global(score)
+create:
+  set score = 8
+  global score = score + read() # score
+  global other = global(score)
+---
+"#,
+    ).unwrap();
+    let original = project.encode();
+    let conflict = edit(json!({"op":"rename_global","id":"score","to":"other"}));
+    assert!(
+        conflict
+            .apply(&mut project)
+            .unwrap_err()
+            .to_string()
+            .contains("global/other")
+    );
+    assert_eq!(project.encode(), original);
+    edit(json!({"op":"rename_global","id":"score","to":"points"}))
+        .apply(&mut project)
+        .unwrap();
+    let index = Index::build(&project);
+    index.require_valid().unwrap();
+    let points = index
+        .edges
+        .iter()
+        .filter(|edge| edge.to == "global/points")
+        .map(|edge| (edge.from.as_str(), edge.at.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        points,
+        [
+            ("room/main", "ui/0/value"),
+            ("room/main", "meters/0/value"),
+            ("script/drive", "line/1"),
+            ("script/drive", "line/4"),
+            ("script/drive", "line/5"),
+        ]
+    );
+    assert!(index.edges.iter().all(|edge| edge.to != "global/score"));
+    let Some(Resource::Script(source)) = project.get(Kind::Script, "drive") else {
+        panic!("expected script");
+    };
+    assert!(source.contains("global points = score + read() # score"));
+    let Some(Resource::Room(room)) = project.get(Kind::Room, "main") else {
+        panic!("expected room");
+    };
+    assert_eq!(room.ui[0].text, "score");
+}
+
+#[test]
 fn music_and_animation_renames_update_resources_and_typed_script_links() {
     let mut project = Project::parse(
         r#"agge/1 {}

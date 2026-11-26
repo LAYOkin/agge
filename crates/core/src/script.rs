@@ -1,6 +1,9 @@
 use crate::{Kind, Result, fail, valid_id};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ops::Range};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    ops::Range,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -73,12 +76,21 @@ pub struct Reference {
     pub quoted: bool,
 }
 
+#[derive(Clone, Debug)]
+pub struct GlobalUse {
+    pub name: String,
+    pub line: usize,
+    pub span: Range<usize>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Program {
     pub events: BTreeMap<Event, Vec<Instruction>>,
     pub functions: BTreeMap<String, Function>,
     pub calls: Vec<Call>,
     pub references: Vec<Reference>,
+    pub globals: Vec<GlobalUse>,
+    pub touch_targets: BTreeSet<String>,
     pub locations: BTreeMap<Event, EventLocation>,
     pub symbols: BTreeMap<String, Vec<(usize, Access)>>,
 }
@@ -191,7 +203,7 @@ pub enum Expr {
     Down(String),
     Pressed(String),
     Released(String),
-    Touch(String),
+    Touch(String, Option<Box<(Expr, Expr)>>),
     Grounded,
     Impact,
     AnimationDone,
@@ -318,6 +330,18 @@ impl<'a> Parser<'a> {
             Some((Token::Word(word), _)) if valid_id(&word) => Ok(word),
             _ => Err(self.error("expected an identifier")),
         }
+    }
+
+    fn global_name(&mut self) -> Result<String> {
+        let index = self.at;
+        let name = self.name()?;
+        let span = &self.tokens[index].1;
+        self.program.globals.push(GlobalUse {
+            name: name.clone(),
+            line: self.line,
+            span: self.offset + span.start..self.offset + span.end,
+        });
+        Ok(name)
     }
     fn arguments(&mut self) -> Result<Vec<Expr>> {
         let mut args = Vec::new();
@@ -491,7 +515,7 @@ impl<'a> Parser<'a> {
                     let call = match word.as_str() {
                         "rand" => Expr::Random,
                         "global" => {
-                            let name = self.name()?;
+                            let name = self.global_name()?;
                             self.symbol(Scope::Global, &name, Access::Read);
                             Expr::Global(name)
                         }
@@ -507,7 +531,17 @@ impl<'a> Parser<'a> {
                             let (x, y) = self.xy()?;
                             Expr::Blocked(Box::new(x), Box::new(y))
                         }
-                        "touch" => Expr::Touch(self.reference(Kind::Object, true)?),
+                        "touch" => {
+                            let id = self.reference(Kind::Object, true)?;
+                            self.program.touch_targets.insert(id.clone());
+                            let offset = if self.peek() == Some(&Token::Punct(',')) {
+                                self.punct(',')?;
+                                Some(Box::new(self.xy()?))
+                            } else {
+                                None
+                            };
+                            Expr::Touch(id, offset)
+                        }
                         "view" if matches!(self.peek(), Some(Token::Quoted(_))) => {
                             let Some((Token::Quoted(key), _)) = self.take() else {
                                 unreachable!()
@@ -655,7 +689,11 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
         "end" => Line::End,
         other => Line::Statement(match other {
             "set" | "global" => {
-                let name = p.name()?;
+                let name = if head == "global" {
+                    p.global_name()?
+                } else {
+                    p.name()?
+                };
                 if head == "set"
                     && matches!(
                         name.as_str(),

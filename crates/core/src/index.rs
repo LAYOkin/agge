@@ -48,6 +48,13 @@ impl Index {
             );
         }
     }
+    fn link_global(&mut self, from: &str, name: &str, at: String) {
+        self.edges.push(Edge {
+            from: from.into(),
+            to: format!("global/{name}"),
+            at,
+        });
+    }
     pub fn manifest(project: &Project) -> BTreeMap<String, String> {
         let mut symbols = BTreeMap::new();
         symbols.insert(
@@ -169,7 +176,13 @@ impl Index {
                     if let Some(music) = &room.music {
                         index.link(&key, Kind::Audio, music, "music");
                     }
+                    for (i, label) in room.ui.iter().enumerate() {
+                        if !label.value.is_empty() {
+                            index.link_global(&key, &label.value, format!("ui/{i}/value"));
+                        }
+                    }
                     for (i, meter) in room.meters.iter().enumerate() {
+                        index.link_global(&key, &meter.value, format!("meters/{i}/value"));
                         if !meter.at.into_iter().all(coord)
                             || !meter.size.into_iter().all(|v| (0.01..=4096.).contains(&v))
                             || !(0. ..=1_000_000.).contains(&meter.max)
@@ -299,6 +312,16 @@ impl Index {
                                 &format!("line/{}", reference.line),
                             );
                         }
+                        let mut globals = BTreeSet::new();
+                        for access in &program.globals {
+                            if globals.insert((access.line, &access.name)) {
+                                index.link_global(
+                                    &key,
+                                    &access.name,
+                                    format!("line/{}", access.line),
+                                );
+                            }
+                        }
                         index.programs.insert(id.clone(), program);
                     }
                     Err(error) => {
@@ -404,6 +427,10 @@ pub enum Edit {
     },
     Rename {
         kind: Kind,
+        id: String,
+        to: String,
+    },
+    RenameGlobal {
         id: String,
         to: String,
     },
@@ -548,6 +575,7 @@ impl Edit {
                     .ok_or_else(|| fail(format!("absent {kind}/{id}")))?;
             }
             Self::Rename { kind, id, to } => rename(project, kind, &id, &to)?,
+            Self::RenameGlobal { id, to } => rename_global(project, &id, &to)?,
             Self::Splice { id, at, text } => {
                 let source = script_mut(project, &id)?;
                 *source = script::splice_lines(source, at, &text)?;
@@ -783,6 +811,72 @@ fn map_mut<'a>(project: &'a mut Project, id: &str) -> Result<&'a mut Tilemap> {
         _ => Err(fail(format!("absent tilemap/{id}"))),
     }
 }
+
+fn rename_global(project: &mut Project, id: &str, to: &str) -> Result<()> {
+    if !valid_id(id) || !valid_id(to) || id == to {
+        return Err(fail("global rename requires two distinct identifiers"));
+    }
+    let mut script_edits = Vec::new();
+    let mut found = false;
+    let check_target = |name: &str| {
+        if name == to {
+            return Err(fail(format!("global/{to} already in use")));
+        }
+        Ok(name == id)
+    };
+    for ((_, key), resource) in &project.resources {
+        match resource {
+            Resource::Script(source) => {
+                let mut spans = Vec::new();
+                for access in script::parse(source)?.globals {
+                    if check_target(&access.name)? {
+                        spans.push(access.span);
+                    }
+                }
+                if !spans.is_empty() {
+                    found = true;
+                    script_edits.push((key.clone(), spans));
+                }
+            }
+            Resource::Room(room) => {
+                for name in room
+                    .ui
+                    .iter()
+                    .map(|label| &label.value)
+                    .chain(room.meters.iter().map(|meter| &meter.value))
+                {
+                    found |= check_target(name)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    if !found {
+        return Err(fail(format!("absent global/{id}")));
+    }
+    for (script, spans) in script_edits {
+        let source = script_mut(project, &script)?;
+        for span in spans.into_iter().rev() {
+            source.replace_range(span, to);
+        }
+    }
+    for resource in project.resources.values_mut() {
+        if let Resource::Room(room) = resource {
+            for name in room
+                .ui
+                .iter_mut()
+                .map(|label| &mut label.value)
+                .chain(room.meters.iter_mut().map(|meter| &mut meter.value))
+            {
+                if name == id {
+                    *name = to.into();
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn rename(project: &mut Project, kind: Kind, id: &str, to: &str) -> Result<()> {
     if !valid_id(to) || project.get(kind, to).is_some() {
         return Err(fail("rename target is invalid or already exists"));

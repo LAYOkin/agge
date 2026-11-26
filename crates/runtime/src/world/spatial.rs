@@ -33,13 +33,13 @@ impl Cells {
 }
 
 #[derive(Default)]
-pub(super) struct SolidIndex {
+pub(super) struct SpatialIndex {
     locations: BTreeMap<u64, Cells>,
     buckets: HashMap<Cell, Vec<u64>>,
     large: BTreeSet<u64>,
 }
 
-impl SolidIndex {
+impl SpatialIndex {
     pub(super) fn clear(&mut self) {
         self.locations.clear();
         self.buckets.clear();
@@ -86,6 +86,13 @@ impl SolidIndex {
 
     // A reducer may visit a collider more than once. Axis clamping is monotone and idempotent.
     pub(super) fn visit(&self, bounds: Bounds, mut consider: impl FnMut(u64)) {
+        self.any(bounds, |id| {
+            consider(id);
+            false
+        });
+    }
+
+    pub(super) fn any(&self, bounds: Bounds, mut matches: impl FnMut(u64) -> bool) -> bool {
         let cells = (self.locations.len() > 8)
             .then(|| {
                 // Leave room for rounding at the supported world-coordinate limits.
@@ -99,38 +106,34 @@ impl SolidIndex {
             .filter(|cells| cells.small());
         if let Some(cells) = cells {
             for cell in cells.iter() {
-                if let Some(ids) = self.buckets.get(&cell) {
-                    for &id in ids {
-                        consider(id);
-                    }
+                if let Some(ids) = self.buckets.get(&cell)
+                    && ids.iter().copied().any(&mut matches)
+                {
+                    return true;
                 }
             }
-            for &id in &self.large {
-                consider(id);
-            }
+            self.large.iter().copied().any(matches)
         } else {
-            for &id in self.locations.keys() {
-                consider(id);
-            }
+            self.locations.keys().copied().any(matches)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Bounds, SolidIndex};
+    use super::{Bounds, SpatialIndex};
     use std::collections::BTreeSet;
 
     #[test]
     fn index_tracks_movement_large_colliders_and_removal() {
-        let mut solids = SolidIndex::default();
+        let mut solids = SpatialIndex::default();
         for id in 1..=12 {
             solids.update(id, Bounds::new(id as f32 * 128., 0., 8., 8.));
         }
         solids.update(20, Bounds::new(-500., -500., 1100., 1100.));
         solids.update(21, Bounds::new(-100., -100., 12., 12.));
         let near = Bounds::new(-110., -110., 24., 24.);
-        let candidates = |index: &SolidIndex, area| {
+        let candidates = |index: &SpatialIndex, area| {
             let mut result = BTreeSet::new();
             index.visit(area, |id| {
                 result.insert(id);
@@ -156,7 +159,7 @@ mod tests {
 
     #[test]
     fn indexed_sweeps_match_an_exhaustive_reduction() {
-        let mut index = SolidIndex::default();
+        let mut index = SpatialIndex::default();
         let mut rng = 991_357_u32;
         let mut sample = |n: u32| {
             rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);

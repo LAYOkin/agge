@@ -275,13 +275,17 @@ impl World {
             Expr::Down(key) => flag(self.input.contains(key)),
             Expr::Pressed(key) => flag(self.input.contains(key) && !self.previous.contains(key)),
             Expr::Released(key) => flag(!self.input.contains(key) && self.previous.contains(key)),
-            Expr::Touch(name) => {
-                let bounds = e.bounds(self.object(&e.object));
-                flag(self.members.get(name).is_some_and(|ids| {
-                    ids.iter()
-                        .filter_map(|id| self.entities.get(id))
-                        .any(|other| bounds.overlaps(other.bounds(self.object(name))))
-                }))
+            Expr::Touch(name, offset) => {
+                let offset = if let Some(pair) = offset {
+                    let (dx, dy) = &**pair;
+                    [
+                        bounded(self.eval(e, context, dx, depth)?)?,
+                        bounded(self.eval(e, context, dy, depth)?)?,
+                    ]
+                } else {
+                    [0., 0.]
+                };
+                flag(self.touches(e, name, offset))
             }
             Expr::Grounded => flag(self.grounded(e)),
             Expr::Impact => context.impact,

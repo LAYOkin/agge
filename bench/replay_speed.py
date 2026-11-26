@@ -85,6 +85,27 @@ def tile_fixture(folder, ticks):
     return project, spec
 
 
+def overlap_fixture(folder, ticks):
+    project = folder / "game.agge"
+    spec = folder / "replay.json"
+    placements, assertions = [], []
+    for index in range(1024):
+        x, y = (index % 32) * 128, (index // 32) * 128
+        placements.append([f"target_{index}", "target", x, y])
+        if index % 8 == 0:
+            probe = f"probe_{index}"
+            placements.append([probe, "probe", x + (4 if index % 16 == 0 else 32), y])
+            assertions.append({"at": ticks, "field": f"entity/{probe}/hits",
+                               "is": ticks if index % 16 == 0 else 0})
+    project.write_text(
+        'agge/1 {}\nroom main ' + json.dumps({"instances": placements}) +
+        '\nobject target {"size":[8,8]}\nobject probe {"size":[8,8],"script":"sense"}'
+        '\nscript sense\ncreate:\n  set hits = 0\nstep:\n  set hits = hits + touch("target")\n---\n',
+        encoding="utf-8")
+    spec.write_text(json.dumps({"ticks": ticks, "expect": assertions}), encoding="utf-8")
+    return project, spec
+
+
 def sample(binary, project, replay):
     start = time.perf_counter()
     result = subprocess.run([binary, "test", project, f"@{replay}"],
@@ -99,15 +120,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", nargs="+", type=Path)
     parser.add_argument("--samples", default=7, type=int)
-    parser.add_argument("--case", choices=["small", "large", "collision", "tiles"], action="append")
+    cases = ["small", "large", "collision", "tiles", "overlap"]
+    parser.add_argument("--case", choices=cases, action="append")
     args = parser.parse_args()
     if not 3 <= args.samples <= 100:
         parser.error("use 3 to 100 samples")
 
     results = []
     with tempfile.TemporaryDirectory(prefix="agge-replay-timing-") as root:
-        cases = args.case or ["small", "large", "collision", "tiles"]
-        for name in cases:
+        for name in args.case or cases:
             if name == "collision":
                 ticks = 240
                 project, replay = collision_fixture(Path(root), ticks)
@@ -116,6 +137,10 @@ def main():
                 ticks = 480
                 project, replay = tile_fixture(Path(root), ticks)
                 details = {"cells": 64 * 256, "movers": 256}
+            elif name == "overlap":
+                ticks = 120
+                project, replay = overlap_fixture(Path(root), ticks)
+                details = {"targets": 1024, "probes": 128}
             else:
                 ticks, spans = (3000, 30) if name == "small" else (60_000, 4096)
                 project, replay = fixture(Path(root), ticks, spans)

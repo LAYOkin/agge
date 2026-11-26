@@ -1,5 +1,5 @@
 mod camera;
-mod solids;
+mod spatial;
 mod tiles;
 mod vm;
 
@@ -99,6 +99,8 @@ pub struct Entity {
     pub born: u64,
     #[serde(skip)]
     dead: bool,
+    #[serde(skip)]
+    runs_step: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -112,6 +114,16 @@ struct ActorEffects {
 }
 
 impl Entity {
+    fn needs_step(&self) -> bool {
+        self.runs_step
+            || self.vx != 0.
+            || self.vy != 0.
+            || self
+                .effects
+                .as_ref()
+                .is_some_and(|effects| !effects.timers.is_empty())
+    }
+
     pub fn bounds(&self, object: &Object) -> Bounds {
         Bounds::new(self.x, self.y, object.size[0], object.size[1])
     }
@@ -220,6 +232,7 @@ pub struct CompiledGame {
     objects: Arc<BTreeMap<String, Object>>,
     animations: Arc<BTreeMap<String, Animation>>,
     collision_tiles: Arc<BTreeMap<String, Arc<tiles::CollisionTiles>>>,
+    touch_targets: BTreeSet<String>,
     has_depth: bool,
 }
 
@@ -248,6 +261,11 @@ impl CompiledGame {
         }
         Ok(Self {
             project: Arc::new(project),
+            touch_targets: index
+                .programs
+                .values()
+                .flat_map(|program| program.touch_targets.iter().cloned())
+                .collect(),
             index: Arc::new(index),
             has_depth: objects.values().any(|object| object.depth != 0),
             objects: Arc::new(objects),
@@ -283,7 +301,8 @@ pub struct World {
     members: BTreeMap<String, BTreeSet<u64>>,
     placements: BTreeMap<String, u64>,
     camera: camera::ViewCamera,
-    solids: solids::SolidIndex,
+    solids: spatial::SpatialIndex,
+    overlaps: BTreeMap<String, spatial::SpatialIndex>,
     pub(crate) globals: BTreeMap<String, f32>,
     pub(crate) particles: Vec<Spark>,
     audio: Vec<String>,
@@ -337,7 +356,12 @@ impl World {
             members: BTreeMap::new(),
             placements: BTreeMap::new(),
             camera: camera::ViewCamera::default(),
-            solids: solids::SolidIndex::default(),
+            solids: spatial::SpatialIndex::default(),
+            overlaps: game
+                .touch_targets
+                .iter()
+                .map(|id| (id.clone(), spatial::SpatialIndex::default()))
+                .collect(),
             globals: BTreeMap::new(),
             particles: vec![],
             audio: vec![],
@@ -459,7 +483,12 @@ impl World {
         });
         let mut ids = std::mem::take(&mut self.step_ids);
         ids.clear();
-        ids.extend(self.entities.keys().copied());
+        ids.extend(
+            self.entities
+                .values()
+                .filter(|entity| entity.needs_step())
+                .map(|entity| entity.id),
+        );
         let index = self.index.clone();
         for &id in &ids {
             let mut entity = self
@@ -524,6 +553,9 @@ impl World {
         self.members.clear();
         self.placements.clear();
         self.solids.clear();
+        self.overlaps
+            .values_mut()
+            .for_each(spatial::SpatialIndex::clear);
         self.particles.clear();
         self.queued.clear();
         let room = self.room().instances.clone();
@@ -565,6 +597,11 @@ impl World {
                     self.placements.insert(placement.clone(), id);
                 }
                 self.members.entry(object.clone()).or_default().insert(id);
+                let definition = self.object(&object);
+                let runs_step = definition.gravity != 0.
+                    || definition.script.as_ref().is_some_and(|script| {
+                        index.programs[script].events.contains_key(&Event::Step)
+                    });
                 self.keep_entity(Entity {
                     id,
                     object,
@@ -577,6 +614,7 @@ impl World {
                     effects: None,
                     born: self.tick,
                     dead: false,
+                    runs_step,
                 });
             }
             for id in first..self.next_id {
@@ -595,21 +633,39 @@ impl World {
         Ok(())
     }
     fn keep_entity(&mut self, entity: Entity) {
-        let object = self.object(&entity.object);
+        let object = &self.objects[&entity.object];
+        let bounds = entity.bounds(object);
         if object.layer != 0 && (object.solid || object.one_way) {
-            self.solids.update(entity.id, entity.bounds(object));
+            self.solids.update(entity.id, bounds);
+        }
+        if let Some(index) = self.overlaps.get_mut(&entity.object) {
+            index.update(entity.id, bounds);
         }
         self.entities.insert(entity.id, entity);
     }
 
     fn unregister(&mut self, entity: &Entity) {
         self.solids.remove(entity.id);
+        if let Some(index) = self.overlaps.get_mut(&entity.object) {
+            index.remove(entity.id);
+        }
         if let Some(placement) = &entity.placement {
             self.placements.remove(placement);
         }
         if let Some(ids) = self.members.get_mut(&entity.object) {
             ids.remove(&entity.id);
         }
+    }
+
+    fn touches(&self, entity: &Entity, id: &str, [dx, dy]: [f32; 2]) -> bool {
+        let [width, height] = self.object(&entity.object).size;
+        let bounds = Bounds::new(entity.x + dx, entity.y + dy, width, height);
+        let object = self.object(id);
+        self.overlaps[id].any(bounds, |candidate| {
+            self.entities
+                .get(&candidate)
+                .is_some_and(|other| bounds.overlaps(other.bounds(object)))
+        })
     }
     pub fn grounded(&self, entity: &Entity) -> bool {
         entity.vy >= 0. && self.blocked(entity, 0., 0.25)

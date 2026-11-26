@@ -733,6 +733,9 @@ fn report_json(report: &Report, include_samples: bool) -> Value {
     if include_samples && !report.samples.is_empty() {
         result["samples"] = json!(report.samples);
     }
+    if include_samples && let Some(watch) = &report.watch {
+        result["watch"] = json!(watch);
+    }
     if !report.failures.is_empty() {
         let shown = report.failures.len().min(FAILURE_LIMIT);
         result["failures"] = json!(&report.failures[..shown]);
@@ -892,9 +895,11 @@ fn guide(key: &str) -> Result<Value> {
             "inspect":{"pixel":"scout","frame":"idle","area":[6,5,6,4]},
             "png":{"pixel":"scout","frames":"*","columns":4,"scale":2}
         }),
-        "animation" => json!({"sprite":"ship","frames":[0,1],"fps":10,"mode":"ping_pong"}),
+        "animation" => {
+            json!({"sprite":"ship","frames":[0,1,2],"fps":10,"holds":{"1":4},"mode":"ping_pong"})
+        }
         "script" => {
-            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\"[,dx,dy])","global(name)","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
+            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","flip x, y","tint [r, g, b, a]","drop ticks","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle[, x, y]","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\"[,dx,dy])","global(name)","pointer(\"x|y|world_x|world_y|active\")","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
         }
         "tilemap" => {
             json!({"cell":16,"at":[0,0],"atlas":"terrain","tiles":{"#":[[120,140,160,255],true],"a":[0],"b":[1,true]},"rows":["###","#a#","b##"]})
@@ -904,7 +909,7 @@ fn guide(key: &str) -> Result<Value> {
             json!({"count":12,"life":30,"speed":120,"radius":2,"color":[230,200,110,255],"gravity":80})
         }
         "replay" => {
-            json!({"ticks":20,"input":[[1,5,"right"]],"pointer":[[2,8,20,16]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"fields":["room","particles","camera/x","camera/y","pointer/active","pointer/x","pointer/y","pointer/world_x","pointer/world_y","grounded/placement","animation/placement","frame/placement","timer/placement/name","expired/placement/name","music","sound/audio","count/object","global/name","entity/placement/property"]})
+            json!({"ticks":20,"input":[[1,5,"right"]],"pointer":[[2,8,20,16]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"watch":{"fields":["room","global/score"],"at":[0,20],"limit":16},"fields":["room","particles","camera/x","camera/y","pointer/active","pointer/x","pointer/y","pointer/world_x","pointer/world_y","grounded/placement","animation/placement","frame/placement","timer/placement/name","expired/placement/name","music","sound/audio","count/object","global/name","entity/placement/property"]})
         }
         "suite" => {
             json!({"cases":{"arrival":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}},"detail":false})

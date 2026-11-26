@@ -454,7 +454,23 @@ pub fn properties(
                 ui.selectable_value(&mut animation.mode, AnimationMode::PingPong, "Ping-pong");
             });
             for (i, frame) in animation.frames.iter_mut().enumerate() {
-                ui.push_id(i, |ui| field(ui, &format!("Frame {}", i + 1), frame));
+                ui.push_id(i, |ui| {
+                    field(ui, &format!("Frame {}", i + 1), frame);
+                    let mut hold = animation.holds.get(&i).copied().unwrap_or(1);
+                    ui.horizontal(|ui| {
+                        ui.label("Hold (frame units)");
+                        if ui
+                            .add(egui::DragValue::new(&mut hold).range(1..=600))
+                            .changed()
+                        {
+                            if hold == 1 {
+                                animation.holds.remove(&i);
+                            } else {
+                                animation.holds.insert(i, hold);
+                            }
+                        }
+                    });
+                });
             }
             ui.horizontal(|ui| {
                 if ui.button("Add frame").clicked() {
@@ -462,6 +478,7 @@ pub fn properties(
                 }
                 if ui.button("Remove last").clicked() {
                     animation.frames.pop();
+                    animation.holds.remove(&animation.frames.len());
                 }
             });
         }

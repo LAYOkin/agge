@@ -86,10 +86,11 @@ step:
 | `move dx, dy` | Sweep a collider by the specified pixel offsets |
 | `camera x, y` | Set the viewport's top-left world coordinate for the end of this tick |
 | `spawn object x, y` | Queue creation of an instance at a pixel position |
-| `emit particle` | Emit a particle burst at the instance position |
+| `emit particle` or `emit particle, x, y` | Emit a burst at the instance origin or the specified world position |
 | `sound audio` | Queue a clip for native playback |
 | `animate clip` or `animate clip, restart` | Switch the instance's clip, restarting when `restart` is nonzero |
 | `flip x, y` | Mirror the instance sprite on each axis whose expression is nonzero |
+| `tint r, g, b, a` or `tint` | Set instance draw color with channels rounded and clamped to 0–255, or restore the authored color |
 | `drop ticks` | Ignore one-way platforms for up to 600 ticks, including this tick. Zero cancels |
 | `after name, ticks` | Start or replace a named instance timer. Zero cancels it |
 | `goto room` | Queue a room change |
@@ -133,6 +134,8 @@ At each tick, entities run in increasing ID order. After an entity's step, gravi
 ### Animation and cooldowns
 
 `animate` preserves elapsed time when the requested clip is already active. Pass `true` to restart it. `once` plays each frame for its normal duration and holds the last one. `anim_done()` returns `1` after the full duration of a one-shot clip. `ping_pong` alternates direction without duplicating the end frames. Clip timing advances on simulation ticks.
+
+Use sparse `holds` to pause selected clip slots. In `{"sprite":"ship","frames":[0,1,2],"fps":12,"holds":{"1":4}}`, the middle slot uses four frame units at 12 fps. Other slots use one unit. Keys are zero-based positions in `frames`. Holds affect the reverse pass in ping-pong mode and extend one-shot completion.
 
 `after shot, 16` sets a timer for 16 ticks after the current tick. `remaining(shot)` returns `0` when idle or due. `expired(shot)` returns `1` only on the due tick, unless the script has already changed or canceled it. An instance can hold 16 timers. Timers follow the instance's lifetime and use whole-tick durations up to 60,000.
 

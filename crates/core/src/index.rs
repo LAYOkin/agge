@@ -320,6 +320,17 @@ impl Index {
                             "invalid frame index, empty animation or fps outside 1–240",
                         );
                     }
+                    if anim.holds.len() > 256
+                        || anim.holds.iter().any(|(&slot, &hold)| {
+                            slot >= anim.frames.len() || !(1..=600).contains(&hold)
+                        })
+                    {
+                        index.error(
+                            "animation_holds",
+                            &key,
+                            "use up to 256 holds of 1–600 units on existing clip slots",
+                        );
+                    }
                 }
                 Resource::Tilemap(map) => {
                     if let Some(id) = &map.atlas {
@@ -931,6 +942,7 @@ impl Edit {
                         sprite,
                         frames: (first..end).collect(),
                         fps,
+                        holds: BTreeMap::new(),
                         mode,
                     }),
                 );

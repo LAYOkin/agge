@@ -55,6 +55,8 @@ struct SavedActor {
     timers: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     flip: Option<[bool; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tint: Option<agge_core::Color>,
     #[serde(default, skip_serializing_if = "is_zero")]
     drop_until: u64,
 }
@@ -151,6 +153,7 @@ impl World {
                         .map(|effects| effects.timers.clone())
                         .unwrap_or_default(),
                     flip: actor.effects.as_ref().and_then(|effects| effects.flip),
+                    tint: actor.effects.as_ref().and_then(|effects| effects.tint),
                     drop_until: actor
                         .effects
                         .as_ref()
@@ -268,6 +271,7 @@ impl CompiledGame {
             let effects = (actor.animation.is_some()
                 || !actor.timers.is_empty()
                 || actor.flip.is_some()
+                || actor.tint.is_some()
                 || actor.drop_until != 0)
                 .then(|| {
                     let (animation, animation_since) = actor
@@ -278,6 +282,7 @@ impl CompiledGame {
                         animation_since,
                         timers: actor.timers,
                         flip: actor.flip,
+                        tint: actor.tint,
                         drop_until: actor.drop_until,
                     })
                 });

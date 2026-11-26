@@ -8,7 +8,7 @@ object victory {"size":[32.0,32.0],"color":[255,255,255,255],"animation":"glow"}
 sprite lantern {"pixel":"lantern","poses":["dim","lit","shimmer"]}
 sprite mesh {"pixel":"mesh"}
 animation dim {"sprite":"lantern","frames":[0],"fps":6}
-animation glow {"sprite":"lantern","frames":[1,1,2,1,2,1],"fps":8}
+animation glow {"sprite":"lantern","frames":[1,2,1,2,1],"fps":8,"holds":{"0":2}}
 script board
 fn col(px) = floor((px - 20) / 32)
 fn row(py) = floor((py - 40) / 32)
@@ -64,7 +64,7 @@ step:
         animate dim
       end
       if col == target_col && row == target_row
-        emit cinders
+        emit cinders, x + 16, y + 16
       end
     end
   end

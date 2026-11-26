@@ -129,10 +129,11 @@ pub enum Statement {
     Global(String, Expr),
     Move(Expr, Expr),
     Flip(Expr, Expr),
+    Tint(Option<Box<[Expr; 4]>>),
     Drop(Expr),
     Camera(Expr, Expr),
     Spawn(String, Expr, Expr),
-    Emit(String),
+    Emit(String, Option<Box<(Expr, Expr)>>),
     Sound(String),
     Animate(String, Option<Expr>),
     After(String, Expr),
@@ -757,6 +758,16 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
                 let (x, y) = p.xy()?;
                 Flip(x, y)
             }
+            "tint" => {
+                if p.peek().is_some() {
+                    let (r, g) = p.xy()?;
+                    p.punct(',')?;
+                    let (b, a) = p.xy()?;
+                    Tint(Some(Box::new([r, g, b, a])))
+                } else {
+                    Tint(None)
+                }
+            }
             "drop" => Drop(p.expr(0)?),
             "camera" => {
                 let (x, y) = p.xy()?;
@@ -767,7 +778,16 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
                 let (x, y) = p.xy()?;
                 Spawn(id, x, y)
             }
-            "emit" => Emit(p.reference(Kind::Particle, false)?),
+            "emit" => {
+                let id = p.reference(Kind::Particle, false)?;
+                let position = if p.peek() == Some(&Token::Punct(',')) {
+                    p.punct(',')?;
+                    Some(Box::new(p.xy()?))
+                } else {
+                    None
+                };
+                Emit(id, position)
+            }
             "sound" => Sound(p.reference(Kind::Audio, false)?),
             "animate" => {
                 let id = p.reference(Kind::Animation, false)?;

@@ -470,6 +470,8 @@ pub struct Animation {
     pub sprite: String,
     pub frames: Vec<usize>,
     pub fps: u32,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub holds: BTreeMap<usize, u16>,
     #[serde(default, skip_serializing_if = "AnimationMode::is_loop")]
     pub mode: AnimationMode,
 }
@@ -491,20 +493,51 @@ impl AnimationMode {
 
 impl Animation {
     pub fn slot(&self, elapsed_frames: u64) -> Option<usize> {
-        let len = self.frames.len() as u64;
+        let len = self.frames.len().checked_sub(1)?;
         if len == 0 {
-            return None;
+            return Some(0);
         }
-        Some(match self.mode {
-            AnimationMode::Loop => elapsed_frames % len,
-            AnimationMode::Once => elapsed_frames.min(len - 1),
-            AnimationMode::PingPong if len > 1 => {
-                let period = 2 * (len - 1);
-                let phase = elapsed_frames % period;
-                phase.min(period - phase)
+        let total = self.duration();
+        let phase = match self.mode {
+            AnimationMode::Loop => elapsed_frames % total,
+            AnimationMode::Once => elapsed_frames.min(total - 1),
+            AnimationMode::PingPong => {
+                let first = self.hold(0);
+                let last = self.hold(len);
+                let phase = elapsed_frames % (2 * total - first - last);
+                if phase < total {
+                    phase
+                } else {
+                    total - last - 1 - (phase - total)
+                }
             }
-            AnimationMode::PingPong => 0,
-        } as usize)
+        };
+        let mut extras = 0;
+        for (&slot, &hold) in self.holds.range(..=len) {
+            let start = slot as u64 + extras;
+            if phase < start {
+                break;
+            }
+            let hold = u64::from(hold.max(1));
+            if phase < start + hold {
+                return Some(slot);
+            }
+            extras += hold - 1;
+        }
+        Some((phase - extras) as usize)
+    }
+
+    fn hold(&self, slot: usize) -> u64 {
+        u64::from(self.holds.get(&slot).copied().unwrap_or(1).max(1))
+    }
+
+    pub fn duration(&self) -> u64 {
+        self.frames.len() as u64
+            + self
+                .holds
+                .range(..self.frames.len())
+                .map(|(_, &hold)| u64::from(hold.saturating_sub(1)))
+                .sum::<u64>()
     }
 
     pub fn elapsed_frames(&self, ticks: u64, hz: u32) -> u64 {
@@ -512,7 +545,7 @@ impl Animation {
     }
 
     pub fn done(&self, elapsed_frames: u64) -> bool {
-        self.mode == AnimationMode::Once && elapsed_frames >= self.frames.len() as u64
+        self.mode == AnimationMode::Once && elapsed_frames >= self.duration()
     }
 }
 

@@ -256,16 +256,14 @@ impl Play {
         Ok(())
     }
 
-    pub fn reload(&mut self, project: Project) -> Result<()> {
+    /// Rebind the playtest to a compiled project and its validated media.
+    pub fn reload(&mut self, game: &CompiledGame, media: Media) -> Result<()> {
         if self.playback().is_some() {
             return Err(fail("reload requires a live playtest"));
         }
-        let bindings = compile_bindings(&project);
-        let game = CompiledGame::new(project)?;
         let world = game.reload_live(self.world())?;
-        let media = Media::load_indexed(world.project(), &self.root, game.index())?;
         self.media = media;
-        self.bindings = bindings;
+        self.bindings = compile_bindings(world.project());
         self.replace_world(world);
         Ok(())
     }
@@ -1118,7 +1116,7 @@ pub fn paint_collider(painter: &Painter, origin: Pos2, scale: f32, collider: Roo
                     to_screen(bounds.right, bounds.bottom),
                 ),
                 0.,
-                Stroke::new(1., Color32::from_rgb(164, 230, 173)),
+                Stroke::new(1.0_f32, Color32::from_rgb(164, 230, 173)),
                 StrokeKind::Inside,
             );
         }

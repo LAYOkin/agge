@@ -33,7 +33,7 @@ pub struct BackdropQuad<'a> {
     pub uv: [[f32; 2]; 2],
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Media {
     pub sprites: BTreeMap<String, Arc<RgbaImage>>,
     pixel_frames: BTreeMap<String, FrameRects>,
@@ -200,7 +200,7 @@ fn edit_object_draw<'a>(project: &'a Project, object: &'a Object, bounds: Bounds
         Some(Resource::Animation(clip)) => Some((clip, 0)),
         _ => None,
     };
-    object_draw(object, bounds, animation, object.flip)
+    object_draw(object, bounds, animation, object.flip, object.color)
 }
 
 fn room_placements<'project, 'room>(
@@ -277,6 +277,7 @@ impl World {
                 self.animation(entity)
                     .map(|(_, clip, elapsed)| (clip, elapsed)),
                 entity.flip(object),
+                entity.tint(object),
             ));
         };
         if self.has_depth || self.room().y_sort {
@@ -500,18 +501,19 @@ fn object_draw<'a>(
     bounds: Bounds,
     animation: Option<(&'a Animation, u64)>,
     flip: [bool; 2],
+    tint: Color,
 ) -> Draw<'a> {
     if let Some((anim, elapsed)) = animation
         && let Some(slot) = anim.slot(elapsed)
     {
-        return Draw::Sprite(bounds, &anim.sprite, anim.frames[slot], object.color, flip);
+        return Draw::Sprite(bounds, &anim.sprite, anim.frames[slot], tint, flip);
     }
     if let Some(id) = &object.sprite {
-        Draw::Sprite(bounds, id, 0, object.color, flip)
+        Draw::Sprite(bounds, id, 0, tint, flip)
     } else if object.shape == Shape::Circle {
-        Draw::Circle(bounds, object.color)
+        Draw::Circle(bounds, tint)
     } else {
-        Draw::Rect(bounds, object.color)
+        Draw::Rect(bounds, tint)
     }
 }
 

@@ -18,6 +18,11 @@ layer strip
 script turn
 step:
   flip true, false
+  if tick == 1
+    tint 128, 255, 255, 255
+  else
+    tint
+  end
 ---
 "#,
     )
@@ -44,7 +49,52 @@ step:
         .unwrap()
         .to_rgba8();
     assert_eq!(*flipped.get_pixel(0, 0), blue);
-    assert_eq!(*flipped.get_pixel(1, 0), red);
+    assert_eq!(*flipped.get_pixel(1, 0), image::Rgba([128, 0, 0, 255]));
+    let save = world.checkpoint().unwrap();
+    let restored = CompiledGame::new(world.project().clone())
+        .unwrap()
+        .restore(save)
+        .unwrap();
+    assert_eq!(
+        capture(&world, &media, [0, 0, 2, 1]).unwrap(),
+        capture(&restored, &media, [0, 0, 2, 1]).unwrap()
+    );
+    world.tick(&Input::new()).unwrap();
+    let reset = image::load_from_memory(&capture(&world, &media, [0, 0, 2, 1]).unwrap())
+        .unwrap()
+        .to_rgba8();
+    assert_eq!(*reset.get_pixel(1, 0), red);
+}
+
+#[test]
+fn positioned_particles_use_world_coordinates_and_authored_fade() {
+    let project = Project::parse(
+        r#"agge/1 {"size":[10,8]}
+room main {"bg":[0,0,0,255],"instances":[["emitter","emitter",0,0]]}
+object emitter {"hidden":true,"script":"emit"}
+particle lamp {"count":1,"life":3,"fade":1,"speed":0,"radius":1,"color":[240,128,80,255]}
+script emit
+create:
+  emit lamp, x + 6.5, y + 4.5
+---
+"#,
+    )
+    .unwrap();
+    let mut world = CompiledGame::new(project).unwrap().preview(None).unwrap();
+    let pixel = |world: &agge_runtime::World| {
+        image::load_from_memory(&capture(world, &Media::default(), [6, 4, 1, 1]).unwrap())
+            .unwrap()
+            .to_rgba8()
+            .get_pixel(0, 0)
+            .0
+    };
+    let lit = [240, 128, 80, 255];
+    assert_eq!(pixel(&world), lit);
+    world.tick(&Input::new()).unwrap();
+    world.tick(&Input::new()).unwrap();
+    assert_eq!(pixel(&world), lit);
+    world.tick(&Input::new()).unwrap();
+    assert_eq!(pixel(&world), [0, 0, 0, 255]);
 }
 
 #[test]

@@ -141,6 +141,32 @@ step:
 }
 
 #[test]
+fn sparse_animation_holds_apply_to_once_loop_and_ping_pong() {
+    let mut clip: agge_core::Animation = serde_json::from_value(json!({
+        "sprite":"strip","frames":[0,1,2,3],"fps":12,
+        "holds":{"0":2,"2":3,"3":2},"mode":"ping_pong"
+    }))
+    .unwrap();
+    let slots = |clip: &agge_core::Animation, count| {
+        (0..count)
+            .map(|time| clip.slot(time).unwrap())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(clip.duration(), 8);
+    assert_eq!(slots(&clip, 14), [0, 0, 1, 2, 2, 2, 3, 3, 2, 2, 2, 1, 0, 0]);
+    clip.mode = agge_core::AnimationMode::Loop;
+    assert_eq!(slots(&clip, 10), [0, 0, 1, 2, 2, 2, 3, 3, 0, 0]);
+    clip.mode = agge_core::AnimationMode::Once;
+    assert_eq!(slots(&clip, 10), [0, 0, 1, 2, 2, 2, 3, 3, 3, 3]);
+    assert!(!clip.done(7));
+    assert!(clip.done(8));
+    clip.frames.truncate(1);
+    clip.holds.retain(|&slot, _| slot == 0);
+    clip.mode = agge_core::AnimationMode::PingPong;
+    assert_eq!(slots(&clip, 4), [0; 4]);
+}
+
+#[test]
 fn oversized_edits_keep_the_original_project_readable() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path().join("test.agge"));

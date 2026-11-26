@@ -22,7 +22,7 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 | `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `asset`, `outline`, `refs`, `session`, `read`, or `schema` |
 | `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops,preview?,verify?}` |
 | `agge_check` | `agge check PROJECT` | Empty object |
-| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,pointer?,expect?,sample?,select?,crop?,base?,from?}` |
+| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,pointer?,expect?,sample?,watch?,select?,crop?,base?,from?}` |
 | `agge_history` | `agge undo` or `agge redo` | `{redo,base?}` |
 | `agge_knowledge` | `agge knowledge PROJECT JSON` | `{op,key?,value?}` |
 | `agge_art` | `agge art PROJECT JSON OUTPUT.png` | `{pixel,frames?,layer?,area?,scale?,columns?,compare?,base?,ops?}` |
@@ -109,6 +109,8 @@ Use `sound/audio_id` to count how many times a sound effect was queued on a tick
 Send `select` only when you need runtime state. Selected state includes the camera origin when it differs from `[0,0]`. Use `crop:[x,y,width,height]` in viewport coordinates when an image is needed. The renderer applies the current camera to world layers and lighting. HUD coordinates remain fixed on screen. MCP caps a crop at 512 pixels per edge. The CLI capture command takes an output path and captures the full viewport when `crop` is omitted. CLI images can be at most 2048 pixels per edge, so supply a crop for larger viewports. A fixed tick count, a fixed seed, and explicit inputs make replay the preferred entry point for automated tests.
 
 Pointer spans are inclusive `[first,last,x,y]` in logical viewport pixels. They must be ordered and disjoint. Gaps are outside the view. Put button holds in `input` as usual, for example `[[3,3,"mouse_left"]]`. Replay selectors include `pointer/active`, `pointer/x`, `pointer/y`, `pointer/world_x`, and `pointer/world_y`.
+
+To find when state changes, add `"watch":{"fields":["room","global/health"],"at":[0,600],"limit":32}`. The report includes the initial values and subsequent changes as `[tick,fieldIndex,value]` rows. Absent values are null. The optional inclusive range defaults to the whole replay. The default limit is 64 rows, and `truncated:true` means a further change occurred. Use up to 16 fields and 256 rows. Studio displays the latest 12 rows and copies the full report.
 
 For `agge capture`, set `"capture_on_failure":true` to save the final frame even when an assertion fails or a script faults. The image shows the final state reached by the replay, and the command still exits with code 1 when it saves a frame from a failed replay.
 

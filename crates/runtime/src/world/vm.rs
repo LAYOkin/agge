@@ -167,6 +167,20 @@ impl World {
                 let y = self.eval(entity, context, y, 0)? != 0.;
                 entity.effects.get_or_insert_with(Default::default).flip = Some([x, y]);
             }
+            Statement::Tint(channels) => {
+                if let Some(channels) = channels {
+                    let mut tint = [0; 4];
+                    for (channel, expression) in tint.iter_mut().zip(channels.iter()) {
+                        *channel = self
+                            .eval(entity, context, expression, 0)?
+                            .round()
+                            .clamp(0., 255.) as u8;
+                    }
+                    entity.effects.get_or_insert_with(Default::default).tint = Some(tint);
+                } else if let Some(effects) = &mut entity.effects {
+                    effects.tint = None;
+                }
+            }
             Statement::Drop(duration) => {
                 let ticks = self.eval(entity, context, duration, 0)?;
                 if !(0. ..=600.).contains(&ticks) || ticks.fract() != 0. {
@@ -230,7 +244,17 @@ impl World {
                     timers.insert(name.clone(), self.tick.saturating_add(ticks as u64));
                 }
             }
-            Statement::Emit(id) => self.emit(id, entity),
+            Statement::Emit(id, position) => {
+                let at = if let Some(position) = position {
+                    [
+                        bounded(self.eval(entity, context, &position.0, 0)?)?,
+                        bounded(self.eval(entity, context, &position.1, 0)?)?,
+                    ]
+                } else {
+                    [entity.x, entity.y]
+                };
+                self.emit(id, at);
+            }
             Statement::Goto(id) => {
                 if self.next_room.is_none() {
                     self.next_room = Some(id.clone());

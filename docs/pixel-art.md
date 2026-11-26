@@ -39,6 +39,8 @@ The base pose contains all layers before the first `frame`, `tween`, or `motion`
 
 A `tween PREFIX FROM COUNT DX DY [LAYER]` generates `PREFIX_0` through `PREFIX_(COUNT-1)` with integer offsets between the endpoints. It can move a single layer or the entire pose. For multiple moving parts, use `motion hover idle head=0,0/0,-1/0,0 tool=0,0/1,0/2,0`. Each track needs the same number of offsets, and each offset is relative to the source pose. Repeat offsets for holds. A later frame can inherit any generated pose. Export order follows source order unless the sprite specifies `poses`.
 
+For anticipation and impact timing, give the playback clip a sparse `holds` map. `"holds":{"0":6,"3":2}` holds the first slot for six frame units and the fourth for two. The same poses can serve multiple clips with independently timed holds.
+
 ## Drawing forms
 
 | Form | Effect on the current layer |

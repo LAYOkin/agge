@@ -4,7 +4,7 @@ use agge_core::{
     store::{Loaded, Store},
     valid_id,
 };
-use agge_runtime::{Checkpoint, Media, Replay, ReplaySuite};
+use agge_runtime::{Checkpoint, CompiledGame, Media, Replay, ReplaySuite};
 use agge_studio::{AudioOutput, Canvas, Play};
 use eframe::egui::{self, Color32, Context, RichText, Ui};
 use std::{
@@ -251,7 +251,7 @@ fn check_replay_base(base: Option<&str>, revision: &str) -> Result<()> {
 pub struct Workbench {
     pub store: Store,
     pub loaded: Loaded,
-    pub index: Index,
+    pub index: Arc<Index>,
     pub draft: Option<Draft>,
     pub media: Media,
     pub canvas: Canvas,
@@ -293,14 +293,14 @@ fn media_stamps(project: &Project, root: &Path) -> Vec<Option<(u64, SystemTime)>
 impl Workbench {
     fn open(store: Store) -> Result<Self> {
         let loaded = store.load()?;
-        let index = Index::build(&loaded.project);
+        let index = Arc::new(Index::build(&loaded.project));
+        let watched_media = media_stamps(&loaded.project, store.root());
         let (media, status, bad) = match Media::load_indexed(&loaded.project, store.root(), &index)
         {
             Ok(media) => (media, "Ready".into(), false),
             Err(error) => (Media::default(), error.to_string(), true),
         };
         let watched_revision = loaded.revision.clone();
-        let watched_media = media_stamps(&loaded.project, store.root());
         let mut this = Self {
             store,
             loaded,
@@ -449,7 +449,8 @@ impl Workbench {
     }
     fn reload(&mut self) -> Result<()> {
         let loaded = self.store.load()?;
-        let index = Index::build(&loaded.project);
+        let index = Arc::new(Index::build(&loaded.project));
+        self.watched_media = media_stamps(&loaded.project, self.store.root());
         let media = Media::load_indexed(&loaded.project, self.store.root(), &index).unwrap_or_else(
             |error| {
                 self.note(error.to_string(), true);
@@ -460,9 +461,8 @@ impl Workbench {
         Ok(())
     }
 
-    fn install(&mut self, loaded: Loaded, index: Index, media: Media) {
+    fn install(&mut self, loaded: Loaded, index: Arc<Index>, media: Media) {
         self.watched_revision.clone_from(&loaded.revision);
-        self.watched_media = media_stamps(&loaded.project, self.store.root());
         self.loaded = loaded;
         self.index = index;
         self.media = media;
@@ -516,11 +516,25 @@ impl Workbench {
         }
         self.watched_revision.clone_from(&candidate.revision);
         self.watched_media = stamps;
-        let index = Index::build(&candidate.project);
-        index.require_valid()?;
+        let game = self
+            .play
+            .is_some()
+            .then(|| CompiledGame::new(candidate.project.clone()))
+            .transpose()?;
+        let index = match &game {
+            Some(game) => game.shared_index(),
+            None => {
+                let index = Index::build(&candidate.project);
+                index.require_valid()?;
+                Arc::new(index)
+            }
+        };
         let media = Media::load_indexed(&candidate.project, self.store.root(), &index)?;
-        if let Some(play) = &mut self.play {
-            play.reload(candidate.project.clone())?;
+        if let (Some(play), Some(game)) = (&mut self.play, game.as_ref()) {
+            play.reload(game, media.clone())?;
+            if next.is_some() {
+                self.mark = None;
+            }
             self.play_canvas = Canvas::default();
         }
         let loaded = next.unwrap_or_else(|| self.loaded.clone());
@@ -1109,7 +1123,6 @@ impl Workbench {
                     .on_hover_text("Reload saved source and media. Active drafts and replay playback stay pinned.")
                     .changed()
                 {
-                    self.watched_revision.clear();
                     self.next_watch = None;
                 }
                 ui.separator();
@@ -1176,6 +1189,9 @@ impl Workbench {
                                 state.camera[0], state.camera[1]
                             ));
                         }
+                        if let Some([x, y]) = state.pointer {
+                            ui.monospace(format!("Pointer {x}, {y}"));
+                        }
                         ui.label(format!(
                             "{} entities · {} particles",
                             state.entities.len(),
@@ -1215,6 +1231,33 @@ impl Workbench {
                                 && let Ok(json) = serde_json::to_string(report)
                             {
                                 ui.ctx().copy_text(json);
+                            }
+                            if let Some(watch) = &report.watch {
+                                ui.collapsing(
+                                    format!("Watched changes ({})", watch.changes.len()),
+                                    |ui| {
+                                        for (tick, field, value) in
+                                            watch.changes.iter().rev().take(12)
+                                        {
+                                            let value = match value {
+                                                Some(agge_runtime::Scalar::Number(number)) => {
+                                                    number.to_string()
+                                                }
+                                                Some(agge_runtime::Scalar::Text(text)) => {
+                                                    text.clone()
+                                                }
+                                                None => "absent".into(),
+                                            };
+                                            ui.monospace(format!(
+                                                "{tick} · {} = {value}",
+                                                watch.fields[*field]
+                                            ));
+                                        }
+                                        if watch.truncated {
+                                            ui.small("Watch reached its change limit.");
+                                        }
+                                    },
+                                );
                             }
                         }
                         if play.playback().is_none() {

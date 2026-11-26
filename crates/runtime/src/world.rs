@@ -122,6 +122,8 @@ struct ActorEffects {
     timers: BTreeMap<String, u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     flip: Option<[bool; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tint: Option<agge_core::Color>,
     #[serde(skip)]
     drop_until: u64,
 }
@@ -150,6 +152,12 @@ impl Entity {
             .as_ref()
             .and_then(|effects| effects.flip)
             .unwrap_or(object.flip)
+    }
+    pub(crate) fn tint(&self, object: &Object) -> agge_core::Color {
+        self.effects
+            .as_ref()
+            .and_then(|effects| effects.tint)
+            .unwrap_or(object.color)
     }
     pub fn timer(&self, name: &str, tick: u64) -> (u64, bool) {
         self.effects
@@ -307,6 +315,10 @@ impl CompiledGame {
 
     pub fn index(&self) -> &Index {
         &self.index
+    }
+
+    pub fn shared_index(&self) -> Arc<Index> {
+        Arc::clone(&self.index)
     }
 
     pub(crate) fn preview_seeded(&self, room: Option<&str>, seed: Option<u64>) -> Result<World> {
@@ -794,7 +806,7 @@ impl World {
         }
         move_by
     }
-    fn emit(&mut self, id: &str, entity: &Entity) {
+    fn emit(&mut self, id: &str, [x, y]: [f32; 2]) {
         let Some(Resource::Particle(style)) = self.project.get(Kind::Particle, id) else {
             unreachable!()
         };
@@ -802,8 +814,8 @@ impl World {
             let direction = random(&mut self.fx_rng) * std::f32::consts::TAU;
             let speed = random(&mut self.fx_rng) * style.speed;
             self.particles.push(Spark {
-                x: entity.x,
-                y: entity.y,
+                x,
+                y,
                 vx: direction.cos() * speed,
                 vy: direction.sin() * speed,
                 age: 0,

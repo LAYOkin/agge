@@ -53,6 +53,58 @@ step:
 }
 
 #[test]
+fn watch_records_initial_and_changed_values_and_flags_the_first_omission() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {"instances":[["probe","probe",0,0]]}
+room clear {}
+object probe {"script":"drive"}
+script drive
+step:
+  if tick == 3
+    set x = 3
+  end
+  if tick == 5
+    goto clear
+  end
+---
+"#,
+    )
+    .unwrap();
+    let game = CompiledGame::new(project).unwrap();
+    let mut spec = serde_json::json!({
+        "ticks":8,"watch":{"at":[2,6],"fields":["room","entity/probe/x"]},
+        "sample":[[4,"room"]],"expect":[{"at":7,"field":"room","is":"clear"}]
+    });
+    let run = |data: &serde_json::Value| {
+        let replay: Replay = serde_json::from_value(data.clone()).unwrap();
+        let (_, report) = replay_compiled(&game, &replay).unwrap();
+        assert!(report.passed());
+        serde_json::to_value(report).unwrap()
+    };
+    let full = run(&spec);
+    assert_eq!(full["samples"], serde_json::json!(["main"]));
+    assert_eq!(
+        full["watch"]["changes"],
+        serde_json::json!([
+            [2, 0, "main"],
+            [2, 1, 0.0],
+            [3, 1, 3.0],
+            [5, 0, "clear"],
+            [5, 1, null]
+        ])
+    );
+    assert!(full["watch"].get("truncated").is_none());
+    spec["watch"]["limit"] = 5.into();
+    assert_eq!(run(&spec)["watch"], full["watch"]);
+    spec["watch"]["limit"] = 4.into();
+    assert_eq!(run(&spec)["watch"]["truncated"], true);
+    spec["watch"]["fields"] = serde_json::json!(["room", "room"]);
+    let invalid: Replay = serde_json::from_value(spec).unwrap();
+    assert!(ReplayPlayback::new(&game, invalid).is_err());
+}
+
+#[test]
 fn touch_probes_follow_moving_and_destroyed_targets_across_cells() {
     let project = Project::parse(
         r#"agge/1 {}

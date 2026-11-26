@@ -1,7 +1,12 @@
 use crate::{CompiledGame, Fault, Input, World};
 use agge_core::{Project, Result, fail, script::PointerProperty, valid_id};
 use serde::{Deserialize, Serialize};
-use std::{borrow::Borrow, collections::BTreeMap, iter::Peekable, vec::IntoIter};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, BTreeSet},
+    iter::Peekable,
+    vec::IntoIter,
+};
 
 const TICK_LIMIT: u32 = 60_000;
 const SPAN_LIMIT: usize = 4096;
@@ -29,6 +34,77 @@ pub struct Replay {
     pub expect: Vec<Assertion>,
     #[serde(default, skip_serializing_if = "Samples::is_empty")]
     pub sample: Samples,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<Watch>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Watch {
+    pub fields: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[u32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WatchReport {
+    pub fields: Vec<String>,
+    pub changes: Vec<(u32, usize, Option<Scalar>)>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+struct WatchState {
+    at: [u32; 2],
+    limit: usize,
+    last: Vec<usize>,
+}
+
+impl WatchState {
+    fn start(watch: &Watch, ticks: u32) -> Result<Self> {
+        let at @ [first, last] = watch.at.unwrap_or([0, ticks]);
+        let limit = watch.limit.unwrap_or(64);
+        if first > last
+            || last > ticks
+            || !(1..=16).contains(&watch.fields.len())
+            || !(watch.fields.len()..=256).contains(&limit)
+            || watch
+                .fields
+                .iter()
+                .any(|key| key.is_empty() || key.len() > 128)
+            || watch.fields.iter().collect::<BTreeSet<_>>().len() != watch.fields.len()
+        {
+            return Err(fail(
+                "watch needs 1–16 unique fields, an in-range interval, and a limit from field count to 256",
+            ));
+        }
+        Ok(Self {
+            at,
+            limit,
+            last: vec![0; watch.fields.len()],
+        })
+    }
+
+    fn observe(&mut self, time: u32, world: &World, report: &mut WatchReport) {
+        let [first, last] = self.at;
+        if time < first || time > last || report.truncated {
+            return;
+        }
+        for (index, (field, old)) in report.fields.iter().zip(&mut self.last).enumerate() {
+            let value = read(world, field);
+            if time != first && same_reading(report.changes[*old].2.as_ref(), value) {
+                continue;
+            }
+            if report.changes.len() == self.limit {
+                report.truncated = true;
+                return;
+            }
+            *old = report.changes.len();
+            report.changes.push((time, index, value.map(Reading::own)));
+        }
+    }
 }
 
 /// Named replay cases are decoded individually so a caller can select one case
@@ -102,6 +178,7 @@ impl ReplayRecorder {
                 pointer: vec![],
                 expect: vec![],
                 sample: Samples::default(),
+                watch: None,
             },
             held: BTreeMap::new(),
             full: false,
@@ -176,6 +253,30 @@ pub enum Scalar {
     Text(String),
 }
 
+#[derive(Clone, Copy)]
+enum Reading<'a> {
+    Number(f32),
+    Text(&'a str),
+}
+
+impl Reading<'_> {
+    fn own(self) -> Scalar {
+        match self {
+            Self::Number(n) => Scalar::Number(n),
+            Self::Text(text) => Scalar::Text(text.into()),
+        }
+    }
+}
+
+fn same_reading(old: Option<&Scalar>, value: Option<Reading<'_>>) -> bool {
+    match (old, value) {
+        (Some(Scalar::Number(old)), Some(Reading::Number(value))) => *old == value,
+        (Some(Scalar::Text(old)), Some(Reading::Text(value))) => old == value,
+        (None, None) => true,
+        _ => false,
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct Failure {
     pub at: u32,
@@ -189,6 +290,8 @@ pub struct Report {
     pub assertions: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub samples: Vec<Option<Scalar>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watch: Option<WatchReport>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub failures: Vec<Failure>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -231,6 +334,7 @@ pub struct ReplayPlayback<S> {
     counts: BTreeMap<String, usize>,
     input: Input,
     pointer_index: usize,
+    watch: Option<WatchState>,
 }
 
 impl<S: Borrow<Replay>> ReplayPlayback<S> {
@@ -294,10 +398,20 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
                 "pointer spans must be ordered, disjoint, and within the replay and viewport",
             ));
         }
+        let watch = replay
+            .watch
+            .as_ref()
+            .map(|watch| WatchState::start(watch, replay.ticks))
+            .transpose()?;
         let report = Report {
             ticks: 0,
             assertions: 0,
             samples: vec![None; replay.sample.len()],
+            watch: replay.watch.as_ref().map(|watch| WatchReport {
+                fields: watch.fields.clone(),
+                changes: Vec::new(),
+                truncated: false,
+            }),
             failures: vec![],
             fault: world.fault().cloned(),
         };
@@ -311,6 +425,7 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
             counts: BTreeMap::new(),
             input: Input::new(),
             pointer_index: 0,
+            watch,
         };
         if playback.report.fault.is_none() {
             playback.observe(0);
@@ -391,33 +506,36 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
             let assertion = &spec.expect[index];
             self.report.assertions += 1;
             let actual = read(&self.world, &assertion.field);
-            let equal = match (&actual, &assertion.is) {
-                (Some(Scalar::Number(actual)), Scalar::Number(expected)) => {
+            let equal = match (actual, &assertion.is) {
+                (Some(Reading::Number(actual)), Scalar::Number(expected)) => {
                     (actual - expected).abs() <= assertion.tolerance
                 }
-                (Some(actual), expected) => actual == expected,
-                (None, _) => false,
+                (actual, expected) => same_reading(Some(expected), actual),
             };
             if !equal {
                 self.report.failures.push(Failure {
                     at: time,
                     field: assertion.field.clone(),
                     expected: assertion.is.clone(),
-                    actual,
+                    actual: actual.map(Reading::own),
                 });
             }
         }
         while let Some((_, index)) = self.samples.next_if(|(tick, _)| *tick == time) {
-            self.report.samples[index] = read(&self.world, spec.sample.point(index).1);
+            self.report.samples[index] =
+                read(&self.world, spec.sample.point(index).1).map(Reading::own);
+        }
+        if let (Some(watch), Some(report)) = (&mut self.watch, &mut self.report.watch) {
+            watch.observe(time, &self.world, report);
         }
     }
 }
 
-fn read(world: &World, field: &str) -> Option<Scalar> {
+fn read<'a>(world: &'a World, field: &str) -> Option<Reading<'a>> {
     let mut parts = field.split('/');
     let value = match (parts.next()?, parts.next(), parts.next(), parts.next()) {
-        ("room", None, None, None) => return Some(Scalar::Text(world.room_id().into())),
-        ("music", None, None, None) => return Some(Scalar::Text(world.room().music.clone()?)),
+        ("room", None, None, None) => return Some(Reading::Text(world.room_id())),
+        ("music", None, None, None) => return Some(Reading::Text(world.room().music.as_deref()?)),
         ("sound", Some(id), None, None) => world.queued_sound_count(id)? as f32,
         ("particles", None, None, None) => world.particles.len() as f32,
         ("count", Some(object), None, None) => world.count(object) as f32,
@@ -425,9 +543,7 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
             u8::from(world.grounded(world.placed(placement)?)) as f32
         }
         ("animation", Some(placement), None, None) => {
-            return Some(Scalar::Text(
-                world.animation(world.placed(placement)?)?.0.into(),
-            ));
+            return Some(Reading::Text(world.animation(world.placed(placement)?)?.0));
         }
         ("frame", Some(placement), None, None) => {
             let (_, clip, elapsed) = world.animation(world.placed(placement)?)?;
@@ -452,7 +568,7 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
         ("entity", Some(placement), Some(property), None) => {
             let entity = world.placed(placement)?;
             match property {
-                "object" => return Some(Scalar::Text(entity.object.clone())),
+                "object" => return Some(Reading::Text(&entity.object)),
                 "x" => entity.x,
                 "y" => entity.y,
                 "vx" => entity.vx,
@@ -462,5 +578,5 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
         }
         _ => return None,
     };
-    Some(Scalar::Number(value))
+    Some(Reading::Number(value))
 }

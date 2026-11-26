@@ -8,7 +8,7 @@ use std::{
     env,
     ffi::OsStr,
     fs,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::ExitCode,
 };
@@ -107,7 +107,7 @@ fn run() -> Result<bool> {
             let (value, ok, image) = service::simulate(&store, argument()?, command == "test")?;
             match (image, command) {
                 (Some(bytes), "capture") => {
-                    fs::write(&args[3], bytes)?;
+                    write_capture(store.path(), Path::new(&args[3]), &bytes)?;
                 }
                 (None, "capture") if ok => return Err(fail("capture requires a crop")),
                 (Some(_), _) => return Err(fail("use agge capture to write a crop")),
@@ -123,6 +123,25 @@ fn run() -> Result<bool> {
         )?),
         _ => unreachable!(),
     }
+}
+
+fn write_capture(project: &Path, target: &Path, bytes: &[u8]) -> Result<()> {
+    let source = same_file::Handle::from_path(project)?;
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(target)?;
+    let mut output = same_file::Handle::from_file(file)?;
+    if source == output {
+        return Err(fail("capture output would overwrite the project"));
+    }
+    let output = output.as_file_mut();
+    if output.metadata()?.is_file() {
+        output.set_len(0)?;
+    }
+    output.write_all(bytes)?;
+    Ok(())
 }
 
 fn argument_text(arg: &OsStr) -> Result<&str> {

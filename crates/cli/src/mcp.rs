@@ -191,7 +191,7 @@ fn call(store: &Store, name: &str, args: Value, queries: &mut service::QueryCach
                 }) {
                     return Err(fail("MCP image crop is limited to 512×512"));
                 }
-                return service::simulate(store, args, false);
+                return service::simulate(store, args, service::SimulationMode::Inspect);
             }
             "agge_history" => {
                 #[derive(serde::Deserialize)]

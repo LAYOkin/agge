@@ -493,8 +493,18 @@ fn run_suite(store: &Store, args: Value) -> Result<Simulation> {
     Ok((result, passed, None))
 }
 
-pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simulation> {
+#[derive(PartialEq)]
+pub enum SimulationMode {
+    Test,
+    Inspect,
+    Capture,
+}
+
+pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode) -> Result<Simulation> {
     if args.get("cases").is_some() {
+        if mode == SimulationMode::Capture {
+            return Err(fail("capture requires a single replay"));
+        }
         return run_suite(store, args);
     }
     let fields = args
@@ -510,7 +520,7 @@ pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simul
         .remove("crop")
         .map(serde_json::from_value)
         .transpose()?;
-    if test_only && (selection.is_some() || area.is_some()) {
+    if mode == SimulationMode::Test && (selection.is_some() || area.is_some()) {
         return Err(fail("test accepts replay fields only"));
     }
     let replay_spec: Replay = serde_json::from_value(args)?;
@@ -519,10 +529,16 @@ pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simul
     let (world, report) = replay(loaded.project, &replay_spec)?;
     let ok = report.passed();
     let mut result = json!({"revision":loaded.revision,"passed":ok,"report":report});
-    if !test_only && let Some(selection) = selection {
+    if let Some(selection) = selection {
         result["state"] =
             json!(world.snapshot(selection.object.as_deref(), selection.placement.as_deref()));
     }
+    let area = area.or_else(|| {
+        (mode == SimulationMode::Capture).then(|| {
+            let [width, height] = world.project().settings.size;
+            [0, 0, width, height]
+        })
+    });
     let bytes = if let Some(area) = area.filter(|_| ok) {
         let media = Media::load(world.project(), store.root())?;
         result["crop"] = json!(area);

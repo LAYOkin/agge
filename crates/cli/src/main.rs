@@ -104,12 +104,16 @@ fn run() -> Result<bool> {
         }
         "knowledge" => output(service::knowledge(&store, argument()?)?),
         "test" | "inspect" | "capture" => {
-            let (value, ok, image) = service::simulate(&store, argument()?, command == "test")?;
+            let mode = match command {
+                "test" => service::SimulationMode::Test,
+                "capture" => service::SimulationMode::Capture,
+                _ => service::SimulationMode::Inspect,
+            };
+            let (value, ok, image) = service::simulate(&store, argument()?, mode)?;
             match (image, command) {
                 (Some(bytes), "capture") => {
                     write_capture(store.path(), Path::new(&args[3]), &bytes)?;
                 }
-                (None, "capture") if ok => return Err(fail("capture requires a crop")),
                 (Some(_), _) => return Err(fail("use agge capture to write a crop")),
                 _ => (),
             }

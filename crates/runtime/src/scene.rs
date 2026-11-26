@@ -3,7 +3,7 @@ use crate::{
     asset::{audio_info, png_decoder},
 };
 use agge_core::{
-    Animation, Color, Instance, Kind, Light, Object, Project, Resource, Result, Room, Shape,
+    Animation, Color, Instance, Kind, Light, Object, Project, Resource, Result, Room, Shape, Tile,
     Tilemap, fail, read_asset,
 };
 use image::{ImageEncoder, RgbaImage, codecs::png::PngEncoder};
@@ -268,6 +268,15 @@ fn tiles<'a>(project: &'a Project, room: &Room, view: Bounds, draw: &mut impl Fn
 }
 
 pub fn draw_tilemap<'a>(map: &'a Tilemap, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
+    visible_tiles(map, view, |bounds, tile| {
+        match (map.atlas.as_deref(), tile.frame()) {
+            (Some(atlas), Some(frame)) => draw(Draw::Sprite(bounds, atlas, frame, tile.color())),
+            _ => draw(Draw::Rect(bounds, tile.color())),
+        }
+    });
+}
+
+fn visible_tiles(map: &Tilemap, view: Bounds, mut visit: impl FnMut(Bounds, &Tile)) {
     let cell = map.cell.max(1) as f32;
     let [left, top] = map.at.map(|position| position as f32);
     if view.right <= left || view.bottom <= top {
@@ -290,13 +299,40 @@ pub fn draw_tilemap<'a>(map: &'a Tilemap, view: Bounds, draw: &mut impl FnMut(Dr
                         cell,
                         cell,
                     );
-                    match (map.atlas.as_deref(), tile.frame()) {
-                        (Some(atlas), Some(frame)) => {
-                            draw(Draw::Sprite(bounds, atlas, frame, tile.color()))
-                        }
-                        _ => draw(Draw::Rect(bounds, tile.color())),
-                    }
+                    visit(bounds, tile);
                 }
+            }
+        }
+    }
+}
+
+pub enum RoomCollider {
+    Solid(Bounds),
+    OneWay(Bounds),
+}
+
+/// Visit the authored colliders visible in the room editor.
+pub fn room_colliders(
+    project: &Project,
+    room: &Room,
+    view: Bounds,
+    mut visit: impl FnMut(RoomCollider),
+) {
+    for id in &room.maps {
+        if let Some(Resource::Tilemap(map)) = project.get(Kind::Tilemap, id) {
+            visible_tiles(map, view, |bounds, tile| {
+                if tile.solid() {
+                    visit(RoomCollider::Solid(bounds));
+                }
+            });
+        }
+    }
+    for (_, object, bounds, _) in room_placements(project, room) {
+        if bounds.overlaps(view) {
+            if object.solid {
+                visit(RoomCollider::Solid(bounds));
+            } else if object.one_way {
+                visit(RoomCollider::OneWay(bounds));
             }
         }
     }

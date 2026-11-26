@@ -109,6 +109,36 @@ object blue {"size":[8,8],"color":[20,70,210,255],"depth":1}
 }
 
 #[test]
+fn room_overlay_reports_visible_solid_tiles_and_one_way_objects() {
+    use agge_runtime::{Bounds, RoomCollider, room_colliders};
+    let project = Project::parse(
+        r##"agge/1 {}
+room main {"maps":["floor"],"instances":[["ledge","platform",12,4],["outside","block",80,4],["prop","scenery",4,4]]}
+tilemap floor {"cell":8,"at":[-4,0],"tiles":{"#":[[255,255,255,255],true],"+":[[255,255,255,255],false]},"rows":["#+"]}
+object platform {"size":[10,4],"one_way":true,"hidden":true}
+object block {"size":[8,8],"solid":true}
+object scenery {"size":[4,4]}
+"##,
+    )
+    .unwrap();
+    let spec = serde_json::from_str(r#"{"ticks":0}"#).unwrap();
+    let (world, _) = replay(project, &spec).unwrap();
+    let mut outlines = Vec::new();
+    room_colliders(
+        world.project(),
+        world.room(),
+        Bounds::new(0., 0., 30., 10.),
+        |collider| {
+            outlines.push(match collider {
+                RoomCollider::Solid(bounds) => (false, bounds.left, bounds.top, bounds.right),
+                RoomCollider::OneWay(bounds) => (true, bounds.left, bounds.top, bounds.right),
+            });
+        },
+    );
+    assert_eq!(outlines, [(false, -4., 0., 4.), (true, 12., 4., 22.)]);
+}
+
+#[test]
 fn placement_picking_uses_ellipse_coverage_and_sprite_bounds() {
     let project = Project::parse(
         r#"agge/1 {"size":[64,64]}

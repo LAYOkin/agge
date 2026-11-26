@@ -505,6 +505,49 @@ pub struct Tilemap {
 }
 
 impl Tilemap {
+    pub fn resize(
+        &mut self,
+        [width, height]: [usize; 2],
+        [dx, dy]: [i32; 2],
+        tile: char,
+    ) -> Result<()> {
+        if !(1..=1024).contains(&width) || !(1..=1024).contains(&height) {
+            return Err(fail("map dimensions must be 1–1024 cells per axis"));
+        }
+        if tile != '.' && (!tile.is_ascii_graphic() || !self.tiles.contains_key(&tile)) {
+            return Err(fail(
+                "resize tile must be empty space or a defined ASCII tile",
+            ));
+        }
+        if self.rows.iter().any(|row| !row.is_ascii()) {
+            return Err(fail("resize requires ASCII map rows"));
+        }
+        let mut rows = vec![tile.to_string().repeat(width); height];
+        let source_x = (0i64 - i64::from(dx)).max(0) as usize;
+        let target_x = dx.max(0) as usize;
+        let source_y = (0i64 - i64::from(dy)).max(0) as usize;
+        let target_y = dy.max(0) as usize;
+        for (source, target) in self
+            .rows
+            .iter()
+            .skip(source_y)
+            .zip(rows.iter_mut().skip(target_y))
+        {
+            let count = source
+                .len()
+                .saturating_sub(source_x)
+                .min(width.saturating_sub(target_x));
+            if count != 0 {
+                target.replace_range(
+                    target_x..target_x + count,
+                    &source[source_x..source_x + count],
+                );
+            }
+        }
+        self.rows = rows;
+        Ok(())
+    }
+
     /// Paint a rectangular area, optionally leaving its interior intact.
     pub fn fill_area(&mut self, [x, y, w, h]: [usize; 4], tile: char, border: bool) -> Result<()> {
         let rows = self.area_mut([x, y, w, h])?;
@@ -522,10 +565,22 @@ impl Tilemap {
         Ok(())
     }
 
-    pub(crate) fn area_mut(&mut self, [x, y, w, h]: [usize; 4]) -> Result<&mut [String]> {
+    /// Read character columns and rows without encoding the rest of the map.
+    pub fn read_area(&self, [x, y, w, h]: [usize; 4]) -> Result<Vec<&str>> {
+        let rows = self.area_rows([x, y, w, h])?;
+        Ok(self.rows[rows].iter().map(|row| &row[x..x + w]).collect())
+    }
+
+    pub(crate) fn area_mut(&mut self, area: [usize; 4]) -> Result<&mut [String]> {
+        let rows = self.area_rows(area)?;
+        Ok(&mut self.rows[rows])
+    }
+
+    fn area_rows(&self, [x, y, w, h]: [usize; 4]) -> Result<std::ops::Range<usize>> {
+        let range = y..y.saturating_add(h);
         let rows = self
             .rows
-            .get_mut(y..y.saturating_add(h))
+            .get(range.clone())
             .ok_or_else(|| fail("area exceeds map height"))?;
         if w == 0
             || h == 0
@@ -535,7 +590,7 @@ impl Tilemap {
         {
             return Err(fail("empty area, non-ASCII map or area exceeds map width"));
         }
-        Ok(rows)
+        Ok(range)
     }
 
     /// Replace the edge-connected region containing `at` with a palette tile or empty space.

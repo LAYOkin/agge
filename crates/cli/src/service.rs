@@ -38,12 +38,16 @@ pub fn check(store: &Store) -> Result<(Value, bool)> {
 #[serde(deny_unknown_fields)]
 struct Query {
     get: Option<String>,
+    base: Option<String>,
     asset: Option<String>,
     schema: Option<String>,
     path: Option<String>,
     lines: Option<[usize; 2]>,
     event: Option<Event>,
     function: Option<String>,
+    area: Option<[usize; 4]>,
+    placements: Option<String>,
+    object: Option<String>,
     outline: Option<String>,
     symbol: Option<String>,
     refs: Option<String>,
@@ -103,7 +107,12 @@ pub fn query_with_cache(store: &Store, args: Value, cache: &mut QueryCache) -> R
         let mut data = Vec::with_capacity(batch.read.len());
         let mut bytes = 0;
         for args in batch.read {
-            let value = match query_data(args, loaded, index) {
+            let response = if args.base.is_some() {
+                Err(fail("set base on the outer read request"))
+            } else {
+                query_data(args, loaded, index)
+            };
+            let value = match response {
                 Ok(value) => value,
                 Err(error) => json!({"error":error.to_string()}),
             };
@@ -130,6 +139,7 @@ pub fn query_with_cache(store: &Store, args: Value, cache: &mut QueryCache) -> R
         return Ok(json!(store.delta(&session, args.advance)?));
     }
     let (loaded, index) = cache.snapshot(store)?;
+    require_revision(loaded, args.base.as_deref())?;
     let mut result = query_data(args, loaded, index)?;
     result["revision"] = json!(loaded.revision);
     Ok(result)
@@ -143,6 +153,7 @@ impl Query {
             &args.asset,
             &args.refs,
             &args.outline,
+            &args.placements,
             &args.prefix,
             &args.schema,
             &args.session,
@@ -150,11 +161,15 @@ impl Query {
         let selectors = usize::from(args.path.is_some())
             + usize::from(args.lines.is_some())
             + usize::from(args.event.is_some())
-            + usize::from(args.function.is_some());
+            + usize::from(args.function.is_some())
+            + usize::from(args.area.is_some());
         if modes.into_iter().filter(|option| option.is_some()).count() > 1
             || selectors > 1
             || selectors != 0 && args.get.is_none()
             || args.symbol.is_some() && args.outline.is_none()
+            || args.object.is_some() && args.placements.is_none()
+            || args.base.is_some()
+                && (args.schema.is_some() || args.asset.is_some() || args.session.is_some())
         {
             return Err(fail("choose one query mode and its applicable selectors"));
         }
@@ -174,6 +189,18 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
         ));
     }
     let mut result = json!({});
+    if let Some(id) = args.placements {
+        let Some(Resource::Room(room)) = loaded.project.get(Kind::Room, &id) else {
+            return Err(fail(format!("absent room/{id}")));
+        };
+        result["id"] = json!(format!("room/{id}"));
+        let placements = room
+            .instances
+            .iter()
+            .filter(|placement| args.object.as_deref().is_none_or(|id| id == placement.1));
+        page(&mut result, placements, args.offset, args.limit);
+        return Ok(result);
+    }
     if let Some(key) = args.outline {
         let source = script_source(&loaded.project, &key)?;
         let program = script::compile(source)?;
@@ -203,7 +230,19 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
         return Ok(result);
     }
     if let Some(key) = args.get {
-        result["data"] = if let Some(event) = args.event {
+        result["data"] = if let Some(area @ [_, _, width, height]) = args.area {
+            let Some(map) = key.strip_prefix("tilemap/") else {
+                return Err(fail("area requires tilemap/id"));
+            };
+            if width.saturating_mul(height) > 4096 {
+                return Err(fail("area exceeds 4096 tile cells"));
+            }
+            let Some(Resource::Tilemap(map)) = loaded.project.get(Kind::Tilemap, map) else {
+                return Err(fail(format!("absent {key}")));
+            };
+            result["area"] = json!(area);
+            json!(map.read_area(area)?)
+        } else if let Some(event) = args.event {
             let source = script_source(&loaded.project, &key)?;
             let program = script::compile(source)?;
             let location = program
@@ -594,6 +633,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"clip","id":"pulse","sprite":"ship","first":4,"count":6,"fps":16,"mode":"once"},
             {"op":"atlas","map":"layout","sprite":"terrain","keys":"abcd","solid":"ab"},
             {"op":"fill","map":"layout","area":[0,0,8,8],"tile":"#","border":true},
+            {"op":"resize_map","map":"layout","size":[24,16],"offset":[2,1]},
             {"op":"flood","map":"layout","at":[2,3],"tile":"#"},
             {"op":"stamp","map":"layout","at":[1,1],"rows":[".#","#."]}
         ]),

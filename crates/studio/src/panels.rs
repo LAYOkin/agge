@@ -405,14 +405,10 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
             let mut dims = [map.rows.first().map_or(1, String::len), map.rows.len()];
             coordinates(ui, "Columns / rows", &mut dims);
             let [w, h] = dims.map(|n| n.clamp(1, 1024));
-            if map.rows.first().is_none_or(|r| r.len() != w) || h != map.rows.len() {
-                map.rows.resize(h, String::new());
-                for row in &mut map.rows {
-                    if row.is_ascii() {
-                        row.truncate(w);
-                        row.extend(std::iter::repeat_n('.', w.saturating_sub(row.len())));
-                    }
-                }
+            if (map.rows.first().is_none_or(|r| r.len() != w) || h != map.rows.len())
+                && let Err(error) = map.resize([w, h], [0, 0], '.')
+            {
+                ui.label(egui::RichText::new(error.to_string()).color(Color32::LIGHT_RED));
             }
             atlas::tile_properties(ui, map, project, tools);
         }

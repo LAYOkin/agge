@@ -128,8 +128,8 @@ fn tool_list() -> Vec<Value> {
     vec![
         tool(
             NAMES[0],
-            "Read IDs, fields, asset metadata, symbols, refs or changes. read batches queries at one revision.",
-            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
+            "Read IDs, fields, tile areas, placements, metadata, symbols, refs or changes. read batches queries at one revision.",
+            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"area":array,"placements":text,"object":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
             json!([]),
         ),
         tool(

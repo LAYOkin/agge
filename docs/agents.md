@@ -32,6 +32,8 @@ Example queries include `{"prefix":"room/","limit":8}`, `{"refs":"object/pilot"}
 
 Use `{"get":"room/main/instances/hero"}` to retrieve a placement by ID without reading its room. Group related lookups with `{"read":[{"get":"room/main/instances/hero"},{"refs":"object/pilot"}]}`. The response contains one `revision` and ordered `data` entries. A failed lookup occupies its position as `{ "error": "..." }`. Set `base` on the outer request to reject a stale snapshot. A batch accepts 16 queries and up to 2 MiB of output. Schema, session, and asset queries run separately.
 
+Use `{"placements":"main","object":"pilot","limit":8}` to page through room placements in authored order. Omit `object` to list all placements. Use `{"get":"tilemap/layout","area":[4,2,8,6]}` to read only the requested tile rows. Areas use `[x,y,width,height]` in zero-based tile coordinates and accept up to 4,096 cells. Both forms work inside `read`. Set `base` to pin a standalone project query, for example when following a pagination cursor.
+
 Use `{"asset":"art/ship.png"}` for dimensions and byte size before slicing, or pass a relative WAV or OGG path for sample rate, channels, and frame count when the container provides it. The query can inspect a file before you add its resource. It returns metadata without binary contents.
 
 For scripts, `{"outline":"script/drive"}` returns event ranges as `[first_line,line_count]` and lists the instance variables, globals, and input actions used. Add `"symbol":"var/speed"` or another listed symbol to locate its reads and writes as `[line,access]` pairs. Use `{"get":"script/drive","event":"step"}` for the exact event text. Line numbers start at 1 inside the script.
@@ -59,6 +61,8 @@ A regular sprite sheet and tile palette can be configured in one batch.
 `slice` replaces the frame list in row-major order. Optional `at` and `gap` values are in PNG pixels. `atlas` maps each key to a consecutive frame starting at `first` (default 0), with `solid` listing which keys block movement. The operation updates those entries and preserves the other keys. Include every existing textured key when changing an assigned atlas. Check media validation after slicing to verify the frame rectangles fit the actual PNG.
 
 Use `{"op":"flood","map":"layout","at":[2,3],"tile":"#"}` to replace the edge-connected region of matching cells at column 2, row 3. Coordinates are zero-based. Use a defined palette tile or `"."` to erase the region.
+
+Use `{"op":"resize_map","map":"layout","size":[24,16],"offset":[2,1]}` to resize an existing tilemap and shift its old cells two columns right and one row down. Cells outside the new bounds are cropped. Uncovered cells use `"."` or the supplied palette `tile`. The offset defaults to `[0,0]`, and the map's world position stays fixed.
 
 After slicing a sheet, use `{"op":"clip","id":"pulse","sprite":"ship","first":4,"count":6,"fps":16,"mode":"once"}` to create or replace an animation. `first` defaults to 0 and `mode` to `loop`. Use a normal animation resource with an explicit frame list for custom frame sequences.
 

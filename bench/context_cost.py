@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import tiktoken
 
@@ -10,9 +11,9 @@ from run import compact, run
 
 
 def measure(binary, root, encoding):
-    def invoke(transcript, command, payload):
+    def invoke(transcript, command, payload, folder=root):
         request = compact(payload)
-        result = run([binary, command, "game.agge", "-"], root, request)
+        result = run([binary, command, "game.agge", "-"], folder, request)
         result.check_returncode()
         transcript.extend([f"agge {command} game.agge -", request, result.stdout.strip()])
         return json.loads(result.stdout)
@@ -50,10 +51,23 @@ def measure(binary, root, encoding):
     placement = invoke(one_form, "query", {"schema": "edit/placement"})
     assert placement == next(item for item in operations if item["op"] == "placement")
 
+    full_map, tile_area = [], []
+    with TemporaryDirectory(prefix="agge-context-") as folder:
+        rows = ["".join(".#"[(x // 4 + y // 4) % 2] for x in range(128)) for y in range(128)]
+        tilemap = {"cell": 16, "tiles": {"#": [[120, 140, 160, 255], True]}, "rows": rows}
+        (Path(folder) / "game.agge").write_text(
+            'agge/1 {}\nroom main {}\ntilemap layout ' + compact(tilemap) + '\n', encoding="utf-8")
+        x, y, width, height = 11, 17, 8, 6
+        whole = invoke(full_map, "query", {"get": "tilemap/layout"}, folder)
+        area = invoke(tile_area, "query", {"get": "tilemap/layout", "area": [x, y, width, height]}, folder)
+        assert whole["revision"] == area["revision"]
+        assert area["data"] == [row[x:x + width] for row in whole["data"]["rows"][y:y + height]]
+
     return [workflow(name, messages) for name, messages in [
         ("six queries", separate), ("batched reads", batch),
         ("six replay snapshots", snapshots), ("one sampled replay", samples),
         ("all edit forms", all_forms), ("one edit form", one_form),
+        ("full 128×128 tilemap", full_map), ("8×6 tile area", tile_area),
     ]]
 
 

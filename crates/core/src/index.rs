@@ -492,6 +492,14 @@ pub enum Edit {
         #[serde(default)]
         border: bool,
     },
+    ResizeMap {
+        map: String,
+        size: [usize; 2],
+        #[serde(default)]
+        offset: [i32; 2],
+        #[serde(default = "empty_tile")]
+        tile: char,
+    },
     Flood {
         map: String,
         at: [usize; 2],
@@ -502,6 +510,10 @@ pub enum Edit {
         at: [usize; 2],
         rows: Vec<String>,
     },
+}
+
+fn empty_tile() -> char {
+    '.'
 }
 
 impl Edit {
@@ -709,6 +721,14 @@ impl Edit {
                 tile,
                 border,
             } => map_mut(project, &map)?.fill_area(area, tile, border)?,
+            Self::ResizeMap {
+                map,
+                size,
+                offset,
+                tile,
+            } => {
+                map_mut(project, &map)?.resize(size, offset, tile)?;
+            }
             Self::Flood { map, at, tile } => map_mut(project, &map)?.flood(at, tile)?,
             Self::Stamp {
                 map,

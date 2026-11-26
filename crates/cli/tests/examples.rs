@@ -1,5 +1,73 @@
-use serde_json::Value;
-use std::{path::Path, process::Command};
+use serde_json::{Value, json};
+use std::{
+    io::Write,
+    path::Path,
+    process::{Command, Stdio},
+};
+
+#[test]
+fn cli_resizes_and_reads_only_the_requested_map_area_and_placements() {
+    let folder = tempfile::tempdir().unwrap();
+    let file = folder.path().join("game.agge");
+    std::fs::write(&file, concat!(
+        "agge/1 {}\n",
+        "room main {\"instances\":[[\"first\",\"pilot\",0,0],[\"wall\",\"block\",8,0],[\"last\",\"pilot\",16,0]]}\n",
+        "object pilot {}\nobject block {}\n",
+        "tilemap map {\"cell\":8,\"at\":[16,24],\"tiles\":{\"#\":[[255,255,255,255]],\"a\":[[0,0,0,255]]},\"rows\":[\"#..\",\".a#\"]}\n",
+    )).unwrap();
+    let run = |command: &str, payload: Value| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_agge"))
+            .arg(command)
+            .arg(&file)
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        write!(child.stdin.take().unwrap(), "{payload}").unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let receipt = run(
+        "edit",
+        json!({"ops":[
+            {"op":"resize_map","map":"map","size":[3,3],"offset":[-1,1],"tile":"#"}
+        ]}),
+    );
+    assert!(receipt.status.success(), "{receipt:?}");
+    let receipt: Value = serde_json::from_slice(&receipt.stdout).unwrap();
+    let revision = &receipt["revision"];
+    let result = run(
+        "query",
+        json!({"base":revision,"read":[
+            {"get":"tilemap/map","area":[0,1,2,2]},
+            {"placements":"main","object":"pilot","limit":1},
+            {"get":"tilemap/map","area":[2,2,2,1]},
+            {"get":"tilemap/map","path":"/at"}
+        ]}),
+    );
+    assert!(result.status.success(), "{result:?}");
+    let result: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(result["data"][0]["data"], json!(["..", "a#"]));
+    assert_eq!(
+        result["data"][1]["items"],
+        json!([["first", "pilot", 0., 0.]])
+    );
+    assert_eq!(result["data"][1]["next"], 1);
+    assert!(result["data"][2]["error"].is_string());
+    assert_eq!(result["data"][3]["data"], json!([16, 24]));
+    let next = run(
+        "query",
+        json!({"base":revision,"placements":"main","object":"pilot","offset":1,"limit":1}),
+    );
+    assert!(next.status.success(), "{next:?}");
+    let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(next["items"], json!([["last", "pilot", 16., 0.]]));
+    assert!(next.get("next").is_none());
+    let stale = run("query", json!({"base":"old","get":"project"}));
+    assert_eq!(stale.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("stale revision"));
+}
 
 #[test]
 fn cli_can_run_one_named_case_from_a_suite_file() {

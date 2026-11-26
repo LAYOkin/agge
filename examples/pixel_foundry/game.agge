@@ -1,0 +1,315 @@
+agge/1 {"title":"Brassline Foundry","start":"main","size":[320,176],"hz":60,"seed":1}
+room main {"bg":[12,24,36,255],"instances":[["hatch","bulkhead",92.0,44.0],["diver","diver",24.0,52.0],["crab","scuttler",124.0,67.0],["rival","rival",216.0,56.0],["spark","arc",260.0,53.0]],"maps":["deck"],"ui":[{"at":[17.0,13.0],"text":"BRASSLINE FOUNDRY","color":[245,189,112,255],"size":18},{"at":[18.0,35.0],"text":"TIDAL MAINTENANCE BAY","color":[125,193,184,255],"size":9},{"at":[18.0,153.0],"text":"ARROWS MOVE / SPACE WELD","color":[190,211,206,255],"size":8},{"at":[222.0,153.0],"text":"REPAIRS ","color":[245,189,112,255],"size":9,"value":"repairs"}]}
+object arc {"size":[26.0,26.0],"color":[255,255,255,255],"animation":"arc","depth":1}
+object bulkhead {"size":[144.0,96.0],"color":[163,179,200,255],"sprite":"bulkhead","depth":-1}
+object diver {"size":[80.0,80.0],"color":[255,255,255,255],"animation":"idle","script":"diver","depth":1}
+object rival {"size":[76.0,76.0],"color":[255,255,255,255],"animation":"watch"}
+object scuttler {"size":[72.0,65.0],"color":[255,255,255,255],"animation":"scuttle"}
+sprite arc {"pixel":"arc"}
+sprite bulkhead {"pixel":"bulkhead"}
+sprite deck {"pixel":"deck"}
+sprite diver {"pixel":"diver","poses":["idle","breath","blink","breath"]}
+sprite rival {"pixel":"rival"}
+sprite scuttler {"pixel":"scuttler"}
+sprite weld {"pixel":"diver","poses":["weld_0","weld_1","weld_2","weld_3"]}
+animation arc {"sprite":"arc","frames":[0,1,2,3,4],"fps":10,"mode":"ping_pong"}
+animation idle {"sprite":"diver","frames":[0,1,2,3],"fps":4}
+animation scuttle {"sprite":"scuttler","frames":[0,1,2],"fps":7,"mode":"ping_pong"}
+animation watch {"sprite":"rival","frames":[0,1,2,3,4],"fps":7,"mode":"ping_pong"}
+animation weld {"sprite":"weld","frames":[0,1,2,3],"fps":12,"mode":"once"}
+tilemap deck {"cell":16,"at":[0,128],"atlas":"deck","tiles":{"a":[0,false],"b":[1,false],"c":[2,false],"d":[3,false]},"rows":["abaaaadaaaabadaaaaca","aaabaacaabaadaaaadaa","aadaaaabaaacaaabaaaa"]}
+script diver
+step:
+  move (down("right") - down("left")) * 80 * dt, 0
+  if pressed("fire")
+    animate weld, true
+    after weld, 24
+    global repairs = global(repairs) + 1
+  end
+  if expired(weld)
+    animate idle
+  end
+---
+palette brass {"swatches":{"C":"c6ffed","D":"678581","M":"a3613f","N":"293f55","O":"f1b765","P":"665287","Q":"e5afc0","R":"9d4e57","S":"ffaf84","T":"79a869","V":"388e93","W":"78cdb8","a":"26363d","b":"382435","c":"87f6d3a8","d":"406067","e":"9eb0a0","f":"c1c576","h":"456078","j":"ffda91","k":"0c1522","m":"6c403b","n":"172638","o":"ce884c","p":"352c52","q":"a078a2","r":"55283d","s":"de7863","t":"3f695b","u":"132f45","v":"1e5968","w":"d5f7d8"},"ramps":["knNh","bmMoOj","uvVWw","adDe","rRsS","pPqQ","tTf"],"ink":"k"}
+palette oxide {"swatches":{"C":"c6ffed","D":"678581","M":"86506f","N":"293f55","O":"e6988e","P":"665287","Q":"e5afc0","R":"593c71","S":"c592a8","T":"79a869","V":"7b6094","W":"c795b6","a":"26363d","b":"321e35","c":"87f6d3a8","d":"406067","e":"9eb0a0","f":"c1c576","h":"456078","j":"f8c7a7","k":"0c1522","m":"5b304c","n":"172638","o":"b56d7d","p":"352c52","q":"a078a2","r":"352247","s":"946988","t":"3f695b","u":"25204a","v":"494070","w":"fadfe0"},"ramps":["knNh","bmMoOj","uvVWw","adDe","rRsS","pPqQ","tTf"],"ink":"k"}
+pixel arc
+canvas 20 20
+style brass
+layer filament
+  rows 7 3 ...c/2.C/..W/.W/VC/2.wW/...c/..c/..V
+  line W 6 14 3 17
+  px C 14 13
+  px c 16 7
+  outline 5 3 10 10 u
+frame charge
+frame fork charge
+layer filament
+  rows 2 4 ...c/.c/3.C/4.W/5.V/6.C/./...W/..W/.c/c
+  line c 11 10 16 14
+  px w 13 4
+tween dissipate fork 3 0 -3
+---
+pixel bulkhead
+canvas 48 32
+style brass
+layer back
+  poly n 0,12 8,6 16,6 21,2 34,2 47,10 48,27 42,32 4,32 0,26
+  poly N 2,12 10,7 19,7 23,4 33,4 45,11 46,24 43,28 8,30 3,26
+  poly n 2,21 10,23 18,14 36,14 45,20 45,26 42,30 8,30 3,26
+  line h 5 12 12 8
+  line h 31 5 43 12
+  line k 0 26 9 30
+  rows 5 15 nN/..n/./2a/./3n/....u/....v/.....n
+  rows 39 16 .k/..n/h/./.2n/....v/..u
+layer hatch
+  oval k 12 2 23 28
+  oval m 13 3 21 26
+  oval o 13 3 19 23
+  oval M 15 5 18 22
+  oval n 16 6 15 19
+  oval v 17 7 13 17
+  oval u 18 8 12 16
+  poly v 18,11 25,8 29,11 27,13 21,16 17,17
+  poly V 18,12 24,9 26,9 24,11 18,15
+  line W 19 12 23 10
+  line v 24 22 28 17
+  rows 15 8 jo/./m/././.n/././o/././n
+  rows 30 10 OM/..m/./././..m/./.k
+  rows 21 25 omM/3b
+layer pipes
+  box k 0 20 13 5
+  box a 0 21 13 3
+  line D 0 21 11 21
+  rows 8 20 bM/mO/bo/bM/kb
+  box k 33 16 15 5
+  box a 33 17 15 3
+  line d 34 17 47 17
+  rows 39 16 bM/mO/bo/bM/kb
+  rows 4 27 dD/..a/....t
+  rows 35 26 d/..Dt/..a/.....t
+---
+pixel deck
+canvas 16 16
+style brass
+frame plate
+layer metal
+  box n 0 0 16 16
+  box N 1 1 14 11
+  line h 1 1 14 1
+  line h 1 2 1 10
+  rows 2 3 dk/..NN/.k/5.NN/..a/...a/.......h/8.n/.........h
+  rows 12 3 kd/./.N/././n/.h/da
+  box k 0 12 16 1
+  box a 0 13 16 3
+  rows 2 13 n2Nn3d3n/..n2an/3d2a
+frame grate plate
+layer metal
+  box k 3 3 10 7
+  rows 3 3 hnhnhnhnhn/NkNkNkNkNk/NkNkNkNkNk/NkNkNkNkNk/NkNkNkNkNk/NkNkNkNkNk/10n
+frame lamp plate
+layer metal
+  box k 4 3 8 7
+  box u 5 4 6 5
+  rows 6 5 VwWW/VWVc/.Vu
+frame overgrowth plate
+layer kelp
+  line t 7 4 5 12
+  line t 7 7 10 5
+  line T 10 3 7 8
+  rows 7 4 f.t/Tftf/..T/tfTf/ftT/..t/.T/.ftt
+---
+pixel diver
+canvas 40 40
+style brass
+layer shadow
+  oval n 4 34 33 5
+  oval k 8 35 23 3
+layer tank
+  poly k 4,12 9,11 13,13 14,29 10,33 5,32 3,29 3,15
+  box a 4 15 8 14
+  poly d 5,13 9,12 12,15 10,29 6,31 4,28 4,17
+  line D 5 15 5 28
+  rows 5 14 eeD/././...N/...N/...N
+  rows 4 19 2n2N2n/3k2a/././2n2N2n/4k
+  rows 6 11 Mo/nm/aj
+layer suit
+  poly k 11,18 24,18 29,21 30,30 26,32 13,32 8,29 8,23
+  poly a 12,19 24,19 27,22 29,28 26,31 13,31 9,28 9,23
+  poly d 12,20 19,21 22,25 21,29 14,30 10,27 10,23
+  poly D 11,21 16,20 20,23 18,25 12,25 10,23
+  rows 12 22 eDD/De./...D/D..D
+  poly m 12,20 15,20 18,28 17,31 15,30
+  line O 13 21 16 28
+  rows 15 25 kjk/moM/knk
+  box k 12 29 14 2
+  rows 13 29 m2oMOM3mmo/2mOmo2M
+  rows 20 24 VVd/WkD/dDD/..e
+  line a 19 28 25 27
+layer legs
+  poly k 11,29 18,29 20,35 17,38 9,38 8,36
+  poly a 12,30 17,30 18,34 16,36 9,36
+  rows 10 33 .DDe/2Ddd/2aed2m/k3n2k
+  poly k 21,29 27,29 29,35 31,36 30,38 22,38 20,35
+  poly a 22,30 26,30 27,34 29,36 22,36 21,34
+  rows 22 32 .DD/Dea/2M2a/omMDaa/4n2k
+layer gloves
+  poly k 8,21 12,22 12,28 10,32 6,32 5,29 6,24
+  poly d 8,22 11,23 10,27 8,29 6,27 7,24
+  rows 6 27 dDD/omO/2mk/kj/2k
+  poly k 26,21 29,21 31,24 34,24 35,27 33,30 28,29 25,26
+  poly D 26,22 29,22 31,25 30,27 27,26 26,24
+  rows 29 26 Mooj/3mO/3k
+layer spanner
+  use spanner 29 17
+layer scarf
+  poly k 10,19 16,19 20,21 28,20 27,24 19,25 14,23 8,26 7,24
+  poly r 11,20 17,20 20,22 27,21 25,23 20,24 14,22 8,25 8,24
+  line R 10 22 16 21
+  line s 14 21 19 22
+  rows 20 23 3R2s
+layer head
+  use helm 8 1
+frame idle
+frame breath idle
+layer head
+  shift 0 -1
+layer scarf
+  px S 10 23
+frame blink idle
+layer head
+  line u 18 10 27 9
+  line v 19 10 26 10
+frame weld_0 idle
+layer spanner
+  shift 2 -2
+frame weld_1 idle
+layer spanner
+  clear 27 14 13 23
+  use spanner 24 16 r90
+layer glow
+  poly c 29,15 37,13 32,17 39,19 32,19 37,24 30,21
+  rows 32 15 ...c/..W/4.C/WcC/.CwW/..c
+frame weld_2 idle
+layer spanner
+  clear 27 14 13 23
+  use spanner 26 17 r90
+layer glow
+  rows 34 11 ...W/2.C/.C/..W/.wW/2wC/CW/...c/..c/....C
+frame weld_3 idle
+layer spanner
+  shift 1 -1
+layer glow
+  rows 34 14 ..c/./W/..c/./....c
+tween recoil weld_0 4 0 -3 spanner
+---
+pixel helm
+canvas 24 22
+style brass
+layer shell
+  oval k 1 0 22 20
+  oval m 2 1 20 18
+  poly M 4,5 8,1 17,1 22,6 22,13 18,18 8,18 3,13
+  oval o 3 1 17 14
+  oval O 4 2 14 10
+  line j 7 3 13 2
+  rows 5 4 jO/O.j
+  poly b 4,13 8,16 20,13 22,10 22,15 17,19 8,19 5,17
+  line M 8 17 17 16
+  px o 17 15
+  rows 6 19 k9m2k/2.8k
+layer lens
+  oval k 7 4 16 12
+  oval o 8 4 14 11
+  oval k 8 5 14 10
+  poly u 10,6 18,5 21,7 21,12 17,14 10,13 8,11 8,8
+  poly v 10,6 18,6 21,8 20,12 17,13 11,12 9,10 9,8
+  poly V 10,7 17,6 19,7 17,10 10,11 9,9
+  line W 11 8 15 7
+  rows 10 8 WwW/..W/7.V/8.v
+  line u 13 12 19 11
+  px V 19 12
+layer rivets
+  rows 2 6 .Ok/.jk/Omk/omk/mk
+  rows 3 12 .o/Ob/o/k
+  rows 17 15 mO/ko
+---
+pixel rival
+canvas 40 40
+style oxide
+base diver
+layer head
+  rows 25 4 q/2Q/qp/p
+  rows 22 12 .QC/cq
+layer insignia
+  rows 20 23 kqk/qQq/kqk
+  line Q 13 24 14 26
+  rows 7 27 pPq/Qq
+frame watch
+frame flare watch
+layer insignia
+  rows 20 23 pQP/QwQ/PQp
+motion signal flare head=0,0/0,-1/0,-2 insignia=0,0/0,0/1,0
+---
+pixel scuttler
+canvas 40 36
+style brass
+layer shadow
+  oval n 2 29 36 6
+  oval k 7 31 27 3
+layer legs
+  line k 15 19 7 22
+  line k 7 22 4 30
+  line k 14 23 8 27
+  line k 8 27 9 33
+  line k 11 20 3 24
+  line k 3 24 1 29
+  line m 14 20 7 23
+  line M 7 23 5 28
+  line o 4 25 2 27
+  line r 14 24 9 28
+  rows 7 26 oM/.oM/..m/..o/..M
+  mirror x 0 17 20 17
+layer shell
+  poly k 8,21 7,15 12,9 19,7 25,8 31,12 34,17 31,25 24,28 13,27
+  poly b 9,20 8,16 12,10 20,8 26,9 31,13 33,17 30,24 23,27 14,26
+  poly R 9,17 11,13 15,10 21,8 26,10 30,13 31,17 26,22 14,22
+  poly s 12,14 15,11 22,9 26,10 28,13 25,17 18,20 12,18
+  poly S 14,13 17,11 23,10 25,11 19,14 16,15
+  line o 12 18 19 20
+  line r 15 23 26 21
+  rows 11 16 Ms./.so/D.3M/..m2o/....Om/2m.m
+  rows 22 14 .O/ooM/mMM/..mM/..Mo
+  rows 17 20 om2mM/2.bom/3b2m
+  rows 25 11 ..o/.sR/oRr/r2m/..r/.R/..s
+  shade 8 7 26 21
+layer eyes
+  line k 13 16 10 8
+  line M 12 14 10 9
+  line k 24 15 27 7
+  line m 25 13 27 8
+  rows 8 6 .kWk/kVCWk/.kVk
+  rows 25 5 .kWk/kVCWk/.kVk
+layer claw
+  poly k 29,18 31,13 32,9 36,7 38,9 36,13 35,14 37,15 38,11 39,12 39,17 37,20 33,22
+  poly m 30,18 32,13 33,10 36,8 37,9 35,13 35,16 37,16 38,14 38,17 36,19 33,21
+  poly o 32,14 33,11 36,9 35,12 34,16 37,17 36,18 33,19
+  rows 32 12 .Oj/Mo/.M/o/2O
+  rows 5 14 k2m/.M2k/2oer/.mor
+frame rest
+frame pinch rest
+layer claw
+  shift 0 -2
+frame tap rest
+layer legs
+  shift 0 -1
+---
+pixel spanner
+canvas 11 16
+style brass
+layer steel
+  poly k 2,14 3,6 1,5 1,1 3,0 3,3 6,4 8,2 8,0 10,2 10,6 7,8 6,15 4,16
+  poly d 3,14 4,6 2,5 2,2 3,5 6,5 9,2 9,5 6,7 5,14
+  line D 4 7 3 13
+  rows 2 3 D/De/4.D/2.eD
+  rows 3 10 mM/oO/mM/k
+---

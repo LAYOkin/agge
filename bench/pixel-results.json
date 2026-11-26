@@ -1,0 +1,44 @@
+{
+  "encoding": "o200k_base",
+  "creation_tokens": {
+    "authored": 2117,
+    "expanded_rle": 7972
+  },
+  "one_pixel_edit_tokens": {
+    "local_patch": 49,
+    "source_replacement": 1267
+  },
+  "quality": {
+    "diver": {
+      "ink_pixels": 977,
+      "swatches": 21,
+      "bounds": [
+        36,
+        38
+      ],
+      "largest_island_percent": 100.0
+    },
+    "scuttler": {
+      "ink_pixels": 772,
+      "swatches": 17,
+      "bounds": [
+        38,
+        30
+      ],
+      "largest_island_percent": 100.0
+    },
+    "bulkhead": {
+      "ink_pixels": 1252,
+      "swatches": 18,
+      "bounds": [
+        48,
+        30
+      ],
+      "largest_island_percent": 100.0
+    },
+    "weld_changed_pixels": 114,
+    "recoil_changed_pixels": 85,
+    "matching_poses": 12,
+    "packed_png_sha256": "fecc45a8d777f4a4bd26f7d191bcad6342a13e0bf2ba6c3e5c30baebf4c3fde0"
+  }
+}

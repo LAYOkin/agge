@@ -128,3 +128,18 @@ On Windows with a Ryzen 5 5600H, nine alternating runs compared release builds b
 ```sh
 python bench/replay_speed.py /path/to/baseline/agge target/release/agge --case overlap --case collision --case tiles --case large --samples 9
 ```
+
+## Native pixel art
+
+The Brassline Foundry benchmark counts compact `o200k_base` edit JSON. Both creation requests include the palette. The native request also includes the reusable helmet and spanner. The expanded baseline encodes complete poses with run-length rows. The benchmark compares pixel glyphs for every pose and requires identical packed PNGs.
+
+| Task | Expanded workflow | Scoped workflow | Token reduction |
+| --- | ---: | ---: | ---: |
+| Create the diver and 11 poses | 7,972 | 2,117 | 73.4% |
+| Change one visor pixel | 1,267 | 49 | 96.1% |
+
+Quality checks cover 12 matching poses including the template, silhouette dimensions, color use, connected clusters, and distinct animation poses. The diver uses 21 swatches at idle. Its weld pose changes 114 pixels and its recoil endpoints differ by 85 pixels. See the [sample artwork](../examples/pixel_foundry), or see [recorded benchmark results](pixel-results.json) for the complete metrics and PNG digest.
+
+```sh
+python bench/pixel_art.py --agge target/release/agge --output pixel-results.json
+```

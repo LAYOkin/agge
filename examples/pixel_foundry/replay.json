@@ -1,0 +1,48 @@
+{
+  "ticks": 30,
+  "input": [
+    [
+      1,
+      12,
+      "right"
+    ],
+    [
+      2,
+      2,
+      "fire"
+    ]
+  ],
+  "expect": [
+    {
+      "at": 0,
+      "field": "animation/diver",
+      "is": "idle"
+    },
+    {
+      "at": 2,
+      "field": "animation/diver",
+      "is": "weld"
+    },
+    {
+      "at": 12,
+      "field": "entity/diver/x",
+      "is": 40,
+      "tolerance": 0.002
+    },
+    {
+      "at": 14,
+      "field": "frame/diver",
+      "is": 2
+    },
+    {
+      "at": 26,
+      "field": "animation/diver",
+      "is": "idle"
+    },
+    {
+      "at": 30,
+      "field": "global/repairs",
+      "is": 1
+    }
+  ]
+}

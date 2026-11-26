@@ -101,6 +101,7 @@ fn bundled_replays_pass_through_the_cli() {
         ("bankshot", None, 12),
         ("cinder", Some(4), 35),
         ("pulse_lock", Some(4), 23),
+        ("pixel_foundry", None, 6),
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_agge"))
             .args(["test", "game.agge", "@replay.json"])

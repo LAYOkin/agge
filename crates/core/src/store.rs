@@ -183,7 +183,6 @@ impl Store {
             receipt.revision = revision;
             return Ok((receipt, passed));
         }
-        check_base(&self.source()?, Some(&revision))?;
         let before = self.history(revision)?;
         let mut after = before.clone();
         after.revision = receipt.revision.clone();
@@ -242,6 +241,7 @@ impl Store {
         if source.len() > PROJECT_LIMIT {
             return Err(fail("project exceeds 2 MiB"));
         }
+        check_base(&self.source()?, Some(&before.revision))?;
         write_json(&self.sibling(".history"), &Journal { before, after })?;
         write_atomic(&self.file, source.as_bytes(), true)
     }
@@ -377,4 +377,34 @@ fn write_atomic(path: &Path, bytes: &[u8], replace: bool) -> Result<()> {
     #[cfg(unix)]
     File::open(parent)?.sync_all()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn commit_preserves_source_and_history_when_an_external_write_changes_the_base() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::new(directory.path().join("game.agge"));
+        store.init(&Project::default()).unwrap();
+        let initial = store.source().unwrap();
+        store
+            .update(None, |project| {
+                project.settings.title = "New title".into();
+                Ok(())
+            })
+            .unwrap();
+        let before = store.history(store.load().unwrap().revision).unwrap();
+        let after = History::empty(revision(&initial));
+        let history_path = store.sibling(".history");
+        let history_bytes = fs::read(&history_path).unwrap();
+        let external = format!("{}\n", store.source().unwrap());
+        fs::write(store.path(), &external).unwrap();
+
+        let error = store.commit(before, after, &initial).unwrap_err();
+        assert!(error.to_string().starts_with("stale revision"), "{error}");
+        assert_eq!(store.source().unwrap(), external);
+        assert_eq!(fs::read(history_path).unwrap(), history_bytes);
+    }
 }

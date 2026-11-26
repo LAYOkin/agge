@@ -14,6 +14,18 @@ use agge_studio::{color, fit};
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::time::{Duration, Instant};
 
+fn unused_placement_id(room: &Room) -> String {
+    let used = room
+        .instances
+        .iter()
+        .map(|instance| instance.0.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    (1..=room.instances.len() + 1)
+        .map(|index| format!("item_{index}"))
+        .find(|id| !used.contains(id.as_str()))
+        .expect("unused placement ID")
+}
+
 pub struct Tools {
     selected: Option<String>,
     place: String,
@@ -279,6 +291,19 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
                 );
                 field(ui, "X", &mut inst.2);
                 field(ui, "Y", &mut inst.3);
+                if ui
+                    .add_enabled(
+                        room.instances.len() < 4096,
+                        egui::Button::new("Duplicate placement"),
+                    )
+                    .on_disabled_hover_text("The room already has 4096 placements.")
+                    .clicked()
+                {
+                    let mut duplicate = room.instances[i].clone();
+                    duplicate.0 = unused_placement_id(room);
+                    tools.select_placement(&duplicate.0);
+                    room.instances.push(duplicate);
+                }
                 if ui.button("Remove placement").clicked() {
                     room.instances.remove(i);
                     if tracked {
@@ -610,15 +635,7 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
         if work.tool.place.is_empty() {
             work.tool.selected = select_at(pos, room);
         } else if room.instances.len() < 4096 {
-            let used = room
-                .instances
-                .iter()
-                .map(|i| i.0.as_str())
-                .collect::<std::collections::BTreeSet<_>>();
-            let id = (1..=room.instances.len() + 1)
-                .map(|i| format!("item_{i}"))
-                .find(|id| !used.contains(id.as_str()))
-                .expect("unused placement ID");
+            let id = unused_placement_id(room);
             let p = view.local(pos);
             let inside = |coordinate: f32, dimension: u32| {
                 snapped(coordinate).clamp(0., ((dimension as f32 - 1.) / snap).floor() * snap)

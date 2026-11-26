@@ -20,6 +20,8 @@ The animation inspector supports loop, one-shot, and ping-pong playback. Use the
 
 Expand **References** in the inspector to navigate between related resources. Incoming script references can jump to the call site, and room references can select a linked placement.
 
+In a room's **Placements** list, select a placement and choose **Duplicate placement** to copy its object and position under a new ID. The copy becomes the selected placement, ready to move or edit.
+
 With the tilemap editor, set the grid dimensions and cell size, create or select a palette character, and paint inside the canvas. Enable **Solid** for tiles that should block movement. Add the tilemap under the room's **Tilemap layers**. Use the room's lights, ambient darkness, and HUD label controls to finish the room.
 
 Use the mouse wheel to zoom at the pointer and drag with the middle mouse button to pan in the room and tilemap canvases. **Fit** restores the full view. Hold the primary button to paint a continuous stroke in the tilemap, then choose **Apply** to save it as one undoable change.

@@ -77,6 +77,8 @@ pub struct Settings {
     pub size: [u32; 2],
     pub hz: u32,
     pub seed: u64,
+    #[serde(skip_serializing_if = "no")]
+    pub pointer: bool,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, Vec<String>>,
 }
@@ -88,6 +90,7 @@ impl Default for Settings {
             size: [640, 360],
             hz: 60,
             seed: 1,
+            pointer: false,
             bindings: BTreeMap::new(),
         }
     }

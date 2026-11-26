@@ -34,6 +34,7 @@ cargo run -p agge -- test examples/bankshot/game.agge @examples/bankshot/replay.
 | [Cinder Circuit](examples/cinder) | Restore three relays while dodging sentry fire. Uses collision filters, animated effects, timers, looped music, and live HUD meters. |
 | [Pulse Lock](examples/pulse_lock) | Time three taps as a cursor sweeps across the gates. Uses a custom keyboard action and replay-verified timing. |
 | [Brassline Foundry](examples/pixel_foundry) | Inspect a layered diver, a mirrored crab, animated welds, a recolored rival, and a tileset drawn entirely with the native sprite DSL. |
+| [Lattice Lanterns](examples/lattice) | Solve a click-driven lights-out puzzle with animated native pixel art and replayed pointer input. |
 
 ![Cinder Circuit playfield showing the pilot, three relays, and status meters](examples/cinder/preview.png)
 

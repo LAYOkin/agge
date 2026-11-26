@@ -322,6 +322,7 @@ impl World {
                 flag(self.blocked(e, x, y))
             }
             Expr::Random => random(&mut self.rng),
+            Expr::Pointer(property) => self.pointer_property(*property),
             Expr::View(property) => match property {
                 ViewProperty::X => self.camera.origin[0],
                 ViewProperty::Y => self.camera.origin[1],

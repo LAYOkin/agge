@@ -179,6 +179,8 @@ pub struct State<'a> {
     pub room: &'a str,
     #[serde(skip_serializing_if = "agge_core::zero_position")]
     pub camera: [f32; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pointer: Option<[u32; 2]>,
     pub globals: &'a BTreeMap<String, f32>,
     pub entities: Vec<&'a Entity>,
     pub particles: usize,
@@ -337,6 +339,7 @@ pub struct World {
     audio: Vec<String>,
     input: Input,
     previous: Input,
+    pointer: Option<[u32; 2]>,
     queued: VecDeque<Queued>,
     next_room: Option<String>,
     rng: u64,
@@ -396,6 +399,7 @@ impl World {
             audio: vec![],
             input: Input::new(),
             previous: Input::new(),
+            pointer: None,
             queued: VecDeque::new(),
             next_room: None,
             rng: seed.max(1),
@@ -421,6 +425,22 @@ impl World {
     }
     pub fn camera(&self) -> [f32; 2] {
         self.camera.origin
+    }
+    pub(crate) fn pointer_property(&self, property: agge_core::script::PointerProperty) -> f32 {
+        use agge_core::script::PointerProperty::*;
+        if matches!(property, Active) {
+            return flag(self.pointer.is_some());
+        }
+        let Some([x, y]) = self.pointer else {
+            return -1.;
+        };
+        match property {
+            Active => unreachable!(),
+            X => x as f32,
+            Y => y as f32,
+            WorldX => x as f32 + self.camera.origin[0],
+            WorldY => y as f32 + self.camera.origin[1],
+        }
     }
     pub fn view(&self) -> Bounds {
         let [x, y] = self.camera();
@@ -453,6 +473,7 @@ impl World {
             tick: self.tick,
             room: &self.room,
             camera: self.camera(),
+            pointer: self.pointer,
             globals: &self.globals,
             entities,
             particles: self.particles.len(),
@@ -484,9 +505,19 @@ impl World {
         ))
     }
     pub fn tick(&mut self, input: &Input) -> std::result::Result<(), Fault> {
+        self.tick_with_pointer(input, None)
+    }
+
+    pub fn tick_with_pointer(
+        &mut self,
+        input: &Input,
+        pointer: Option<[u32; 2]>,
+    ) -> std::result::Result<(), Fault> {
         if let Some(fault) = &self.fault {
             return Err(fault.clone());
         }
+        let [w, h] = self.project.settings.size;
+        self.pointer = pointer.filter(|&[x, y]| x < w && y < h);
         let result = self.advance(input);
         self.fault = result.as_ref().err().cloned();
         result

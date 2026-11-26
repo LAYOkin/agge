@@ -1,5 +1,5 @@
 use crate::{CompiledGame, Fault, Input, World};
-use agge_core::{Project, Result, fail, valid_id};
+use agge_core::{Project, Result, fail, script::PointerProperty, valid_id};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, collections::BTreeMap, iter::Peekable, vec::IntoIter};
 
@@ -11,6 +11,9 @@ const SPAN_LIMIT: usize = 4096;
 pub struct InputSpan(pub u32, pub u32, pub String);
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct PointerSpan(pub u32, pub u32, pub u32, pub u32);
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Replay {
     pub ticks: u32,
@@ -20,6 +23,8 @@ pub struct Replay {
     pub seed: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<InputSpan>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pointer: Vec<PointerSpan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expect: Vec<Assertion>,
     #[serde(default, skip_serializing_if = "Samples::is_empty")]
@@ -94,6 +99,7 @@ impl ReplayRecorder {
                 room: Some(room.into()),
                 seed: None,
                 input: vec![],
+                pointer: vec![],
                 expect: vec![],
                 sample: Samples::default(),
             },
@@ -103,16 +109,37 @@ impl ReplayRecorder {
     }
 
     pub fn record(&mut self, input: &Input) {
+        self.record_frame(input, None);
+    }
+
+    pub fn record_frame(&mut self, input: &Input, pointer: Option<[u32; 2]>) {
         if self.full {
             return;
         }
         self.held.retain(|key, _| input.contains(key));
         let added = input.len() - self.held.len();
-        if self.spec.ticks == TICK_LIMIT || self.spec.input.len() + added > SPAN_LIMIT {
+        let extend_pointer = self
+            .spec
+            .pointer
+            .last()
+            .is_some_and(|span| pointer == Some([span.2, span.3]) && span.1 == self.spec.ticks);
+        if self.spec.ticks == TICK_LIMIT
+            || self.spec.input.len() + added > SPAN_LIMIT
+            || (pointer.is_some() && !extend_pointer && self.spec.pointer.len() == SPAN_LIMIT)
+        {
             self.full = true;
             return;
         }
         self.spec.ticks += 1;
+        if let Some([x, y]) = pointer {
+            if extend_pointer {
+                self.spec.pointer.last_mut().unwrap().1 = self.spec.ticks;
+            } else {
+                self.spec
+                    .pointer
+                    .push(PointerSpan(self.spec.ticks, self.spec.ticks, x, y));
+            }
+        }
         for key in input {
             let span = if let Some(&span) = self.held.get(key) {
                 span
@@ -203,6 +230,7 @@ pub struct ReplayPlayback<S> {
     changes: Peekable<IntoIter<(u32, usize, bool)>>,
     counts: BTreeMap<String, usize>,
     input: Input,
+    pointer_index: usize,
 }
 
 impl<S: Borrow<Replay>> ReplayPlayback<S> {
@@ -224,6 +252,7 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
         let replay = spec.borrow();
         if replay.ticks > TICK_LIMIT
             || replay.input.len() > SPAN_LIMIT
+            || replay.pointer.len() > SPAN_LIMIT
             || replay.expect.len() > 4096
             || replay.sample.len() > 256
             || replay
@@ -256,6 +285,15 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
             .collect::<Vec<_>>();
         changes.sort_unstable_by_key(|(tick, _, _)| *tick);
         let world = make_world(replay)?;
+        let [w, h] = world.project().settings.size;
+        if replay.pointer.iter().any(|PointerSpan(a, b, x, y)| {
+            *a == 0 || a > b || *b > replay.ticks || *x >= w || *y >= h
+        }) || replay.pointer.windows(2).any(|pair| pair[0].1 >= pair[1].0)
+        {
+            return Err(fail(
+                "pointer spans must be ordered, disjoint, and within the replay and viewport",
+            ));
+        }
         let report = Report {
             ticks: 0,
             assertions: 0,
@@ -272,6 +310,7 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
             changes: changes.into_iter().peekable(),
             counts: BTreeMap::new(),
             input: Input::new(),
+            pointer_index: 0,
         };
         if playback.report.fault.is_none() {
             playback.observe(0);
@@ -323,7 +362,19 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
                 }
             }
         }
-        if let Err(error) = self.world.tick(&self.input) {
+        if spec
+            .pointer
+            .get(self.pointer_index)
+            .is_some_and(|span| time > span.1)
+        {
+            self.pointer_index += 1;
+        }
+        let pointer = spec
+            .pointer
+            .get(self.pointer_index)
+            .filter(|span| time >= span.0)
+            .map(|span| [span.2, span.3]);
+        if let Err(error) = self.world.tick_with_pointer(&self.input, pointer) {
             self.report.fault = Some(error);
             return;
         }
@@ -394,6 +445,9 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
         }
         ("camera", Some("x"), None, None) => world.camera()[0],
         ("camera", Some("y"), None, None) => world.camera()[1],
+        ("pointer", Some(property), None, None) => {
+            world.pointer_property(PointerProperty::parse(property)?)
+        }
         ("global", Some(key), None, None) => world.globals.get(key).copied().unwrap_or(0.),
         ("entity", Some(placement), Some(property), None) => {
             let entity = world.placed(placement)?;

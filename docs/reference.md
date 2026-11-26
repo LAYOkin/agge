@@ -103,6 +103,8 @@ Read-only variables are `dt`, `tick`, `width`, and `height`. Width and height ar
 
 `released("action")` returns `1` on the first simulation tick after the action stops being held and `0` otherwise. Use it to commit an action after a hold, such as launching a charged shot.
 
+Enable desktop pointer input with `"pointer":true` in the project header or in Studio's Project dialog. `pointer("active")` is 1 inside the game viewport. `pointer("x")` and `pointer("y")` read logical pixel coordinates. Use `world_x` and `world_y` to include the current camera offset. Coordinates return -1 outside the viewport. Button actions are `mouse_left`, `mouse_right`, and `mouse_middle`. Read them with the same `pressed`, `down`, and `released` functions used for keyboard actions.
+
 ### Reuse script expressions
 
 Declare an expression function at the top level of any script. An event can call functions in its own script by name or call another script's functions with `script_id.function(...)`. The module can contain just functions. Declarations can appear before or after events.

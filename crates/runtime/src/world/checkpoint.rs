@@ -27,6 +27,8 @@ pub struct Checkpoint {
     rng: [u64; 2],
     camera: [f32; 2],
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pointer: Option<[u32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     next_room: Option<String>,
     globals: BTreeMap<String, f32>,
     entities: Vec<SavedActor>,
@@ -156,6 +158,7 @@ impl World {
                 })
                 .collect(),
             particles: self.particles.clone(),
+            pointer: self.pointer,
             held: self.previous.clone(),
             sounds: self.audio.clone(),
         })
@@ -202,6 +205,10 @@ impl CompiledGame {
             || !save.held.iter().all(|key| valid_id(key))
             || !valid_vars(&save.globals)
             || !save.camera.iter().all(|v| v.is_finite())
+            || save.pointer.is_some_and(|[x, y]| {
+                let [w, h] = self.project.settings.size;
+                x >= w || y >= h
+            })
         {
             return Err(fail("checkpoint has invalid world state"));
         }
@@ -228,6 +235,7 @@ impl CompiledGame {
         world.next_room = save.next_room;
         world.previous = save.held;
         world.input.clone_from(&world.previous);
+        world.pointer = save.pointer;
         world.globals = save.globals;
         let (mut last_id, mut placements) = (0, BTreeSet::new());
         for actor in save.entities {

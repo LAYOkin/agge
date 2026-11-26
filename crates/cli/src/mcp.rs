@@ -148,7 +148,7 @@ fn tool_list() -> Vec<Value> {
         tool(
             NAMES[3],
             "Replay ticks with input [first,last,action], expect, sample, state or crop. Or run named replay cases with one summary.",
-            json!({"ticks":number,"from":text,"room":text,"seed":{"type":"integer","minimum":0},"input":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
+            json!({"ticks":number,"from":text,"room":text,"seed":{"type":"integer","minimum":0},"input":array,"pointer":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
             json!([]),
         ),
         tool(

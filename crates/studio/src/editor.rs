@@ -974,6 +974,7 @@ impl Workbench {
                     ui.label("Seed");
                     ui.add(egui::DragValue::new(&mut settings.seed));
                 });
+                ui.checkbox(&mut settings.pointer, "Enable pointer input");
                 draft.bindings(ui);
                 ui.horizontal(|ui| {
                     let apply = ui.button("Apply settings").clicked();
@@ -1141,7 +1142,6 @@ impl Workbench {
             });
         });
         if let Some(play) = &mut self.play {
-            play.update(ctx);
             if self.inspect {
                 let mut restore_mark = false;
                 let state = play.world().snapshot(None, None);
@@ -1277,6 +1277,8 @@ impl Workbench {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(Color32::BLACK))
                 .show(ctx, |ui| {
+                    play.set_viewport(ui.available_rect_before_wrap());
+                    play.update(ctx);
                     self.play_canvas.play_with_colliders(
                         ui,
                         play,

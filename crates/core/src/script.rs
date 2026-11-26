@@ -196,6 +196,28 @@ pub enum ViewProperty {
     Height,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum PointerProperty {
+    Active,
+    X,
+    Y,
+    WorldX,
+    WorldY,
+}
+
+impl PointerProperty {
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "active" => Self::Active,
+            "x" => Self::X,
+            "y" => Self::Y,
+            "world_x" => Self::WorldX,
+            "world_y" => Self::WorldY,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Expr {
     Number(f32),
@@ -213,6 +235,7 @@ pub enum Expr {
     Blocked(Box<Expr>, Box<Expr>),
     Random,
     View(ViewProperty),
+    Pointer(PointerProperty),
     Math(Math, Vec<Expr>),
     Choose(Box<Expr>, Box<Expr>, Box<Expr>),
     Call(FunctionName, Vec<Expr>),
@@ -543,6 +566,16 @@ impl<'a> Parser<'a> {
                                 None
                             };
                             Expr::Touch(id, offset)
+                        }
+                        "pointer" if matches!(self.peek(), Some(Token::Quoted(_))) => {
+                            let Some((Token::Quoted(key), _)) = self.take() else {
+                                unreachable!()
+                            };
+                            Expr::Pointer(PointerProperty::parse(&key).ok_or_else(|| {
+                                self.error(
+                                    "pointer property must be active, x, y, world_x or world_y",
+                                )
+                            })?)
                         }
                         "view" if matches!(self.peek(), Some(Token::Quoted(_))) => {
                             let Some((Token::Quoted(key), _)) = self.take() else {

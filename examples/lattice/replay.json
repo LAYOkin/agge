@@ -1,0 +1,137 @@
+{
+  "cases": {
+    "solve": {
+      "ticks": 9,
+      "input": [
+        [
+          1,
+          1,
+          "mouse_left"
+        ],
+        [
+          3,
+          3,
+          "mouse_left"
+        ],
+        [
+          8,
+          8,
+          "confirm"
+        ]
+      ],
+      "pointer": [
+        [
+          1,
+          2,
+          34,
+          55
+        ],
+        [
+          3,
+          3,
+          68,
+          86
+        ]
+      ],
+      "expect": [
+        {
+          "at": 0,
+          "field": "global/lit",
+          "is": 4
+        },
+        {
+          "at": 1,
+          "field": "global/lit",
+          "is": 5
+        },
+        {
+          "at": 3,
+          "field": "global/lit",
+          "is": 0
+        },
+        {
+          "at": 4,
+          "field": "room",
+          "is": "clear"
+        },
+        {
+          "at": 4,
+          "field": "global/moves",
+          "is": 2
+        },
+        {
+          "at": 9,
+          "field": "global/lit",
+          "is": 4
+        },
+        {
+          "at": 9,
+          "field": "room",
+          "is": "main"
+        }
+      ]
+    },
+    "miss_and_reset": {
+      "ticks": 5,
+      "input": [
+        [
+          1,
+          1,
+          "mouse_left"
+        ],
+        [
+          3,
+          3,
+          "mouse_left"
+        ],
+        [
+          5,
+          5,
+          "mouse_right"
+        ]
+      ],
+      "pointer": [
+        [
+          1,
+          1,
+          160,
+          51
+        ],
+        [
+          3,
+          3,
+          34,
+          55
+        ],
+        [
+          5,
+          5,
+          34,
+          55
+        ]
+      ],
+      "expect": [
+        {
+          "at": 1,
+          "field": "global/moves",
+          "is": 0
+        },
+        {
+          "at": 3,
+          "field": "global/moves",
+          "is": 1
+        },
+        {
+          "at": 5,
+          "field": "global/moves",
+          "is": 0
+        },
+        {
+          "at": 5,
+          "field": "global/lit",
+          "is": 4
+        }
+      ]
+    }
+  }
+}

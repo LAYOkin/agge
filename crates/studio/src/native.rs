@@ -103,7 +103,6 @@ impl eframe::App for Player {
                 });
             }
         }
-        self.play.update(ctx);
         if let Some((message, bad)) = self.message.clone() {
             egui::TopBottomPanel::bottom("save_status").show(ctx, |ui| {
                 ui.horizontal(|ui| {
@@ -124,6 +123,8 @@ impl eframe::App for Player {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(Color32::BLACK))
             .show(ctx, |ui| {
+                self.play.set_viewport(ui.available_rect_before_wrap());
+                self.play.update(ctx);
                 self.canvas.play(ui, &self.play);
                 if let Some(fault) = self.play.world().fault() {
                     egui::Window::new("Game stopped").show(ctx, |ui| {
@@ -160,6 +161,8 @@ pub struct Play {
     last: Option<Instant>,
     elapsed: f64,
     pending: Input,
+    pending_pointer: Option<[u32; 2]>,
+    viewport: Option<Rect>,
     bindings: KeyBindings,
     music_id: Option<String>,
     music_gain: Option<f32>,
@@ -209,6 +212,8 @@ impl Play {
             last: None,
             elapsed: 0.,
             pending: Input::new(),
+            pending_pointer: None,
+            viewport: None,
             bindings,
             music_id: None,
             music_gain: None,
@@ -273,6 +278,7 @@ impl Play {
         self.last = None;
         self.elapsed = 0.;
         self.pending.clear();
+        self.pending_pointer = None;
         self.audio = AudioOutput::default();
         self.music_id = None;
         self.music_gain = None;
@@ -332,18 +338,18 @@ impl Play {
     }
     pub fn step(&mut self, ctx: &egui::Context) {
         if self.can_advance() {
-            let (mut input, pressed, _) = self.read_input(ctx);
-            input.extend(pressed);
-            self.advance(&input);
+            let mut frame = self.read_input(ctx);
+            frame.held.append(&mut frame.pressed);
+            self.advance(&frame.held, frame.click.or(frame.pointer));
         }
     }
-    fn advance(&mut self, input: &Input) {
+    fn advance(&mut self, input: &Input, pointer: Option<[u32; 2]>) {
         let ok = match &mut self.simulation {
             Simulation::Live(world) => {
                 if let Some(recording) = &mut self.recording {
-                    recording.record(input);
+                    recording.record_frame(input, pointer);
                 }
-                world.tick(input).is_ok()
+                world.tick_with_pointer(input, pointer).is_ok()
             }
             Simulation::Replay(replay) => {
                 replay.step();
@@ -355,11 +361,17 @@ impl Play {
         }
     }
 
-    fn read_input(&self, ctx: &egui::Context) -> (Input, Input, bool) {
+    pub fn set_viewport(&mut self, area: Rect) {
+        self.viewport = Some(fit(area, self.world().project().settings.size));
+    }
+
+    fn read_input(&self, ctx: &egui::Context) -> FrameInput {
         if self.playback().is_some() {
-            (Input::new(), Input::new(), false)
+            FrameInput::default()
         } else {
-            actions(ctx, &self.bindings)
+            let settings = &self.world().project().settings;
+            let viewport = self.viewport.filter(|_| settings.pointer);
+            actions(ctx, &self.bindings, viewport, settings.size)
         }
     }
     pub fn update(&mut self, ctx: &egui::Context) {
@@ -375,25 +387,31 @@ impl Play {
             self.last = None;
             self.elapsed = 0.;
             self.pending.clear();
+            self.pending_pointer = None;
             return;
         }
         let dt = 1. / self.world().project().settings.hz as f64;
         if let Some(last) = self.last.replace(now) {
             self.elapsed += (now - last).as_secs_f64().min(0.25);
         }
-        let (held, pressed, reset_pending) = self.read_input(ctx);
-        if reset_pending {
+        let frame = self.read_input(ctx);
+        if frame.reset {
             self.pending.clear();
+            self.pending_pointer = None;
         }
-        self.pending.extend(pressed);
+        self.pending.extend(frame.pressed);
+        if frame.click.is_some() {
+            self.pending_pointer = frame.click;
+        }
         for _ in 0..12 {
             if self.elapsed < dt {
                 break;
             }
             self.elapsed -= dt;
-            let mut input = held.clone();
+            let mut input = frame.held.clone();
             input.append(&mut self.pending);
-            self.advance(&input);
+            let pointer = self.pending_pointer.take().or(frame.pointer);
+            self.advance(&input, pointer);
             if !self.can_advance() {
                 self.audio.pause_music(true);
                 return;
@@ -512,10 +530,33 @@ fn compile_bindings(project: &Project) -> KeyBindings {
     bindings
 }
 
-fn actions(ctx: &egui::Context, bindings: &KeyBindings) -> (Input, Input, bool) {
+#[derive(Default)]
+struct FrameInput {
+    held: Input,
+    pressed: Input,
+    reset: bool,
+    pointer: Option<[u32; 2]>,
+    click: Option<[u32; 2]>,
+}
+
+const MOUSE_ACTIONS: [(egui::PointerButton, &str); 3] = [
+    (egui::PointerButton::Primary, "mouse_left"),
+    (egui::PointerButton::Secondary, "mouse_right"),
+    (egui::PointerButton::Middle, "mouse_middle"),
+];
+
+fn actions(
+    ctx: &egui::Context,
+    bindings: &KeyBindings,
+    viewport: Option<Rect>,
+    size: [u32; 2],
+) -> FrameInput {
     ctx.input(|input| {
         if !input.focused {
-            return (Input::new(), Input::new(), true);
+            return FrameInput {
+                reset: true,
+                ..Default::default()
+            };
         }
         let focus_loss = input
             .events
@@ -543,13 +584,86 @@ fn actions(ctx: &egui::Context, bindings: &KeyBindings) -> (Input, Input, bool) 
             .flatten()
             .cloned()
             .collect();
-        (held, pressed, focus_loss.is_some())
+        let mut frame = FrameInput {
+            held,
+            pressed,
+            reset: focus_loss.is_some(),
+            ..Default::default()
+        };
+        if let Some(viewport) = viewport {
+            let logical = |pos: Pos2| {
+                let uv = (pos - viewport.min) / viewport.size();
+                ((0. ..1.).contains(&uv.x) && (0. ..1.).contains(&uv.y)).then(|| {
+                    [
+                        ((uv.x * size[0] as f32) as u32).min(size[0] - 1),
+                        ((uv.y * size[1] as f32) as u32).min(size[1] - 1),
+                    ]
+                })
+            };
+            frame.pointer = input.pointer.latest_pos().and_then(logical);
+            if frame.pointer.is_some() {
+                for (button, action) in MOUSE_ACTIONS {
+                    if input.pointer.button_down(button) {
+                        frame.held.insert(action.into());
+                    }
+                }
+            }
+            for event in events {
+                if let egui::Event::PointerButton {
+                    pos,
+                    button,
+                    pressed: true,
+                    ..
+                } = event
+                    && let Some((_, action)) = MOUSE_ACTIONS.iter().find(|entry| entry.0 == *button)
+                    && let Some(point) = logical(*pos)
+                {
+                    frame.pressed.insert((*action).into());
+                    frame.click = Some(point);
+                }
+            }
+        }
+        frame
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quick_pointer_tap_maps_to_game_pixels_and_excludes_letterboxing() {
+        let ctx = egui::Context::default();
+        let area = Rect::from_min_size(Pos2::ZERO, Vec2::new(400., 400.));
+        let size = [200, 100];
+        let bounds = fit(area, size);
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let inside = Pos2::new(120., 140.);
+        let outside = Pos2::new(120., 20.);
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerMoved(inside),
+                    button(inside, true),
+                    button(inside, false),
+                    egui::Event::PointerMoved(outside),
+                ],
+                ..Default::default()
+            },
+            |ctx| {
+                let frame = actions(ctx, &KeyBindings::new(), Some(bounds), size);
+                assert_eq!(frame.click, Some([60, 20]));
+                assert_eq!(frame.pointer, None);
+                assert!(frame.pressed.contains("mouse_left"));
+                assert!(frame.held.is_empty());
+            },
+        );
+    }
 
     #[test]
     fn native_replay_starts_paused_and_stops_at_the_last_recorded_tick() {

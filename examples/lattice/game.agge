@@ -1,0 +1,112 @@
+agge/1 {"title":"Lattice Lanterns","start":"main","size":[256,176],"hz":60,"seed":1,"pointer":true}
+room clear {"bg":[16,26,32,255],"instances":[["lantern","victory",58.0,63.0],["reset","restart",0.0,0.0]],"backdrops":[{"sprite":"mesh","frame":0,"at":[0.0,0.0],"size":[16.0,16.0],"scroll":[0.0,0.0],"repeat":[true,true],"tint":[255,255,255,255]}],"ui":[{"at":[20.0,15.0],"text":"LATTICE LANTERNS","color":[255,208,143,255],"size":14},{"at":[108.0,63.0],"text":"ALL LIGHTS OUT","color":[142,231,187,255],"size":10},{"at":[108.0,85.0],"text":"MOVES  ","color":[255,208,143,255],"size":8,"value":"moves"},{"at":[20.0,150.0],"text":"CLICK / ENTER   PLAY AGAIN","color":[205,221,218,255],"size":8}]}
+room main {"bg":[16,26,32,255],"instances":[["controller","controller",0.0,0.0],["lantern_0_0","lantern",20.0,40.0],["lantern_1_0","lantern",52.0,40.0],["lantern_2_0","lantern",84.0,40.0],["lantern_0_1","lantern",20.0,72.0],["lantern_1_1","lantern",52.0,72.0],["lantern_2_1","lantern",84.0,72.0],["lantern_0_2","lantern",20.0,104.0],["lantern_1_2","lantern",52.0,104.0],["lantern_2_2","lantern",84.0,104.0]],"backdrops":[{"sprite":"mesh","frame":0,"at":[0.0,0.0],"size":[16.0,16.0],"scroll":[0.0,0.0],"repeat":[true,true],"tint":[255,255,255,255]}],"ui":[{"at":[20.0,15.0],"text":"LATTICE LANTERNS","color":[255,208,143,255],"size":14},{"at":[129.0,43.0],"text":"Douse lights","color":[142,231,187,255],"size":10},{"at":[129.0,59.0],"text":"Click a light","color":[205,221,218,255],"size":8},{"at":[129.0,71.0],"text":"to toggle its","color":[205,221,218,255],"size":8},{"at":[129.0,83.0],"text":"cross.","color":[205,221,218,255],"size":8},{"at":[129.0,98.0],"text":"LIT    ","color":[255,208,143,255],"size":8,"value":"lit"},{"at":[129.0,111.0],"text":"MOVES  ","color":[255,208,143,255],"size":8,"value":"moves"},{"at":[20.0,150.0],"text":"RIGHT CLICK / ENTER   RESET","color":[205,221,218,255],"size":8}],"meters":[{"at":[129.0,125.0],"size":[89.0,4.0],"value":"lit","max":9.0,"color":[255,208,143,255]}]}
+object controller {"size":[16.0,16.0],"color":[255,255,255,255],"script":"board","hidden":true}
+object lantern {"size":[32.0,32.0],"color":[255,255,255,255],"sprite":"lantern","script":"tile"}
+object restart {"size":[16.0,16.0],"color":[255,255,255,255],"script":"restart","hidden":true}
+object victory {"size":[32.0,32.0],"color":[255,255,255,255],"animation":"glow"}
+sprite lantern {"pixel":"lantern","poses":["dim","lit","shimmer"]}
+sprite mesh {"pixel":"mesh"}
+animation dim {"sprite":"lantern","frames":[0],"fps":6}
+animation glow {"sprite":"lantern","frames":[1,1,2,1,2,1],"fps":8}
+script board
+fn col(px) = floor((px - 20) / 32)
+fn row(py) = floor((py - 40) / 32)
+fn inside(c,r) = c >= 0 && c < 3 && r >= 0 && r < 3
+create:
+  global lit = 0
+  global moves = 0
+step:
+  global hit = 0
+  if pressed("mouse_right") || pressed("confirm")
+    goto main
+  else
+    if global(lit) == 0
+      goto clear
+    else
+      if pressed("mouse_left")
+        global target_col = col(pointer("x"))
+        global target_row = row(pointer("y"))
+        if inside(global(target_col), global(target_row))
+          global hit = 1
+          global moves = global(moves) + 1
+        end
+      end
+    end
+  end
+---
+script restart
+step:
+  if pressed("mouse_left") || pressed("confirm")
+    goto main
+  end
+---
+script tile
+fn near(col,row,other_col,other_row) = abs(col - other_col) + abs(row - other_row) <= 1
+create:
+  set col = board.col(x)
+  set row = board.row(y)
+  set lit = near(col,row,1,1) != near(col,row,0,0)
+  if lit
+    global lit = global(lit) + 1
+    animate glow
+  end
+step:
+  if global(hit)
+    set target_col = global(target_col)
+    set target_row = global(target_row)
+    if near(col,row,target_col,target_row)
+      set lit = !lit
+      global lit = global(lit) + 2 * lit - 1
+      if lit
+        animate glow, true
+      else
+        animate dim
+      end
+      if col == target_col && row == target_row
+        emit cinders
+      end
+    end
+  end
+---
+particle cinders {"count":8,"life":19,"speed":37.0,"radius":1.0,"color":[255,208,143,255],"gravity":24.0,"fade":13}
+palette enamel {"swatches":{"a":"24343c","b":"3b5357","c":"60847e","d":"9bc1ab","g":"c57553","k":"101a20","m":"744558","s":"383147","w":"fff1b7","y":"ffc17e"},"ramps":["abcd","smgyw"],"ink":"k"}
+pixel lantern
+canvas 24 24
+style enamel
+layer brass
+  poly a 3,2 20,2 22,5 22,19 19,22 4,22 1,19 1,5
+  poly b 4,3 19,3 21,5 21,17 18,20 5,20 2,17 2,5
+  rows 4 3 15c/c13.c/c13.c/15.
+  rows 4 18 c13.c/.13a./2.11k2.
+  px d 2 5
+  px d 21 5
+  px c 3 17
+  px c 20 17
+  outline 0 0 24 24
+layer glass
+  poly k 7,6 16,6 18,9 18,14 15,18 8,18 5,14 5,9
+  poly s 8,7 15,7 17,9 17,14 14,17 9,17 6,14 6,9
+  rows 7 8 3m/2m/3.m/4.2m/5.2m
+  rows 8 15 2a4.2a/.6a.
+layer filigree
+  rows 10 8 .c./cdc/.c./3./.c.
+frame dim
+frame lit dim
+layer glass
+  poly m 8,7 15,7 17,9 17,14 14,17 9,17 6,14 6,9
+  poly g 8,8 15,8 16,10 16,13 14,15 9,15 7,13 7,10
+  poly y 10,9 13,9 15,12 13,14 10,14 8,12
+layer filigree
+  rows 10 8 .y./ywy/.y./w.y/.w.
+frame shimmer lit
+layer filigree
+  rows 10 8 .w./ywy/.w./y.w/.y.
+---
+pixel mesh
+canvas 16 16
+style enamel
+layer base
+  box k 0 0 16 16
+  rows 0 0 2a12.2a/a14.a/16./16./16./16./16./7.2a7./7.2a7./16./16./16./16./16./a14.a/2a12.2a
+---

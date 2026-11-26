@@ -4,10 +4,14 @@ use agge_core::{
     store::{Loaded, Store},
     valid_id,
 };
-use agge_runtime::{Media, Replay, ReplaySuite};
+use agge_runtime::{Checkpoint, Media, Replay, ReplaySuite};
 use agge_studio::{AudioOutput, Canvas, Play};
 use eframe::egui::{self, Color32, Context, RichText, Ui};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::{Duration, Instant, SystemTime},
+};
 
 pub const MINT: Color32 = Color32::from_rgb(149, 234, 210);
 pub const MUTED: Color32 = Color32::from_rgb(153, 165, 185);
@@ -267,7 +271,25 @@ pub struct Workbench {
     jump_line: Option<usize>,
     close_prompt: bool,
     replay_draft: Option<ReplayDraft>,
+    mark: Option<Checkpoint>,
+    watch: bool,
+    next_watch: Option<Instant>,
+    watched_revision: String,
+    watched_media: Vec<Option<(u64, SystemTime)>>,
 }
+
+fn media_stamps(project: &Project, root: &Path) -> Vec<Option<(u64, SystemTime)>> {
+    project
+        .asset_paths()
+        .into_iter()
+        .map(|path| {
+            let path = agge_core::asset_path(path).ok()?;
+            let info = root.join(path).metadata().ok()?;
+            Some((info.len(), info.modified().ok()?))
+        })
+        .collect()
+}
+
 impl Workbench {
     fn open(store: Store) -> Result<Self> {
         let loaded = store.load()?;
@@ -277,6 +299,8 @@ impl Workbench {
             Ok(media) => (media, "Ready".into(), false),
             Err(error) => (Media::default(), error.to_string(), true),
         };
+        let watched_revision = loaded.revision.clone();
+        let watched_media = media_stamps(&loaded.project, store.root());
         let mut this = Self {
             store,
             loaded,
@@ -300,6 +324,11 @@ impl Workbench {
             jump_line: None,
             close_prompt: false,
             replay_draft: None,
+            mark: None,
+            watch: false,
+            next_watch: None,
+            watched_revision,
+            watched_media,
         };
         let start = this.loaded.project.settings.start.clone();
         this.select(Kind::Room, &start);
@@ -419,15 +448,26 @@ impl Workbench {
         self.bad = bad;
     }
     fn reload(&mut self) -> Result<()> {
-        self.loaded = self.store.load()?;
-        self.index = Index::build(&self.loaded.project);
-        self.canvas = Canvas::default();
-        self.tool.refresh_media();
-        self.media = Media::load_indexed(&self.loaded.project, self.store.root(), &self.index)
-            .unwrap_or_else(|error| {
+        let loaded = self.store.load()?;
+        let index = Index::build(&loaded.project);
+        let media = Media::load_indexed(&loaded.project, self.store.root(), &index).unwrap_or_else(
+            |error| {
                 self.note(error.to_string(), true);
                 Media::default()
-            });
+            },
+        );
+        self.install(loaded, index, media);
+        Ok(())
+    }
+
+    fn install(&mut self, loaded: Loaded, index: Index, media: Media) {
+        self.watched_revision.clone_from(&loaded.revision);
+        self.watched_media = media_stamps(&loaded.project, self.store.root());
+        self.loaded = loaded;
+        self.index = index;
+        self.media = media;
+        self.canvas = Canvas::default();
+        self.tool.refresh_media();
         self.audio = AudioOutput::default();
         let key = self.draft.take().map(|d| (d.kind, d.id));
         if let Some((kind, id)) = key
@@ -445,6 +485,47 @@ impl Workbench {
             let start = self.loaded.project.settings.start.clone();
             self.select(Kind::Room, &start);
         }
+    }
+
+    fn watch_files(&mut self, ctx: &Context) -> Result<()> {
+        if !self.watch
+            || self.dirty()
+            || self
+                .play
+                .as_ref()
+                .is_some_and(|play| play.playback().is_some())
+        {
+            self.next_watch = None;
+            return Ok(());
+        }
+        let now = Instant::now();
+        if let Some(next) = self.next_watch
+            && next > now
+        {
+            ctx.request_repaint_after(next - now);
+            return Ok(());
+        }
+        let delay = Duration::from_millis(500);
+        self.next_watch = Some(now + delay);
+        ctx.request_repaint_after(delay);
+        let next = self.store.load_if_changed(Some(&self.loaded.revision))?;
+        let candidate = next.as_ref().unwrap_or(&self.loaded);
+        let stamps = media_stamps(&candidate.project, self.store.root());
+        if candidate.revision == self.watched_revision && stamps == self.watched_media {
+            return Ok(());
+        }
+        self.watched_revision.clone_from(&candidate.revision);
+        self.watched_media = stamps;
+        let index = Index::build(&candidate.project);
+        index.require_valid()?;
+        let media = Media::load_indexed(&candidate.project, self.store.root(), &index)?;
+        if let Some(play) = &mut self.play {
+            play.reload(candidate.project.clone())?;
+            self.play_canvas = Canvas::default();
+        }
+        let loaded = next.unwrap_or_else(|| self.loaded.clone());
+        self.install(loaded, index, media);
+        self.note("Reloaded external changes", false);
         Ok(())
     }
     fn save(&mut self) -> Result<()> {
@@ -543,6 +624,7 @@ impl Workbench {
         ));
         play.paused = self.play.as_ref().is_some_and(|current| current.paused);
         self.play = Some(play);
+        self.mark = None;
         self.play_canvas = Canvas::default();
         Ok(())
     }
@@ -555,6 +637,13 @@ impl Workbench {
         self.play_canvas = Canvas::default();
         self.inspect = true;
         Ok(())
+    }
+
+    fn stop_play(&mut self) {
+        self.play = None;
+        self.mark = None;
+        self.watched_revision.clone_from(&self.loaded.revision);
+        self.next_watch = None;
     }
     fn command(&mut self, command: impl FnOnce(&mut Self) -> Result<()>) {
         if let Err(error) = command(self) {
@@ -633,7 +722,7 @@ impl Workbench {
             ui.add_space(12.);
             if let Some(play) = &mut self.play {
                 if ui.button("■ Stop").clicked() {
-                    self.play = None;
+                    self.stop_play();
                 } else if ui
                     .button("Restart")
                     .on_hover_text("Return to the starting room at tick 0.")
@@ -648,7 +737,7 @@ impl Workbench {
                         {
                             let script = script.to_owned();
                             let message = fault.to_string();
-                            self.play = None;
+                            self.stop_play();
                             self.select(Kind::Script, &script);
                             self.jump_line = Some(line);
                             self.note(message, true);
@@ -990,9 +1079,12 @@ impl Workbench {
             || self.settings.is_some()
             || self.create.is_some()
             || self.rename.is_some();
+        if !dialog_open && let Err(error) = self.watch_files(ctx) {
+            self.note(error.to_string(), true);
+        }
         if !dialog_open && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
             if self.play.is_some() {
-                self.play = None;
+                self.stop_play();
             } else {
                 self.command(Self::play);
             }
@@ -1012,6 +1104,14 @@ impl Workbench {
             .show(ctx, |ui| self.header(ui));
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                if ui.checkbox(&mut self.watch, "Watch project files")
+                    .on_hover_text("Reload saved source and media. Active drafts and replay playback stay pinned.")
+                    .changed()
+                {
+                    self.watched_revision.clear();
+                    self.next_watch = None;
+                }
+                ui.separator();
                 let status = self.play.as_ref().and_then(|play| {
                     play.world()
                         .fault()
@@ -1043,6 +1143,7 @@ impl Workbench {
         if let Some(play) = &mut self.play {
             play.update(ctx);
             if self.inspect {
+                let mut restore_mark = false;
                 let state = play.world().snapshot(None, None);
                 egui::SidePanel::right("runtime_inspector")
                     .default_width(253.)
@@ -1116,6 +1217,25 @@ impl Workbench {
                                 ui.ctx().copy_text(json);
                             }
                         }
+                        if play.playback().is_none() {
+                            let mark = ui.button("Mark tick").clicked();
+                            restore_mark = ui
+                                .add_enabled(self.mark.is_some(), egui::Button::new("Restore tick"))
+                                .clicked();
+                            if mark {
+                                match play.world().checkpoint() {
+                                    Ok(checkpoint) => {
+                                        self.status = format!("Marked tick {}", checkpoint.tick());
+                                        self.bad = false;
+                                        self.mark = Some(checkpoint);
+                                    }
+                                    Err(error) => {
+                                        self.status = error.to_string();
+                                        self.bad = true;
+                                    }
+                                }
+                            }
+                        }
                         ui.separator();
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             for (key, value) in state.globals {
@@ -1141,6 +1261,18 @@ impl Workbench {
                             }
                         });
                     });
+                if restore_mark && let Some(checkpoint) = &self.mark {
+                    match play.restore(checkpoint.clone()) {
+                        Ok(()) => {
+                            self.status = format!("Restored tick {}", checkpoint.tick());
+                            self.bad = false;
+                        }
+                        Err(error) => {
+                            self.status = error.to_string();
+                            self.bad = true;
+                        }
+                    }
+                }
             }
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(Color32::BLACK))

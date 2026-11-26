@@ -128,6 +128,8 @@ pub enum Statement {
     Set(String, Expr),
     Global(String, Expr),
     Move(Expr, Expr),
+    Flip(Expr, Expr),
+    Drop(Expr),
     Camera(Expr, Expr),
     Spawn(String, Expr, Expr),
     Emit(String),
@@ -718,6 +720,11 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
                 let (x, y) = p.xy()?;
                 Move(x, y)
             }
+            "flip" => {
+                let (x, y) = p.xy()?;
+                Flip(x, y)
+            }
+            "drop" => Drop(p.expr(0)?),
             "camera" => {
                 let (x, y) = p.xy()?;
                 Camera(x, y)

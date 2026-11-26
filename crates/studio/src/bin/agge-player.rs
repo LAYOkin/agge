@@ -1,9 +1,10 @@
 use agge_core::{Result, fail, valid_id};
 use std::{env, path::PathBuf, process::ExitCode};
 
-const HELP: &str = "Usage: agge-player [--room ROOM] [PROJECT]
+const HELP: &str = "Usage: agge-player [--room ROOM] [--save FILE] [PROJECT]
 
-With no project path, load game.agge beside the player.";
+With no project path, load game.agge beside the player.
+--save enables F6 to save and F9 to load.";
 
 fn main() -> ExitCode {
     if let Err(error) = run() {
@@ -15,7 +16,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<()> {
     let mut args = env::args_os().skip(1);
-    let (mut file, mut room) = (None, None);
+    let (mut file, mut room, mut save) = (None, None, None);
     let mut options = true;
     while let Some(arg) = args.next() {
         match arg.to_str().filter(|_| options) {
@@ -33,6 +34,12 @@ fn run() -> Result<()> {
                 );
             }
             Some("--room") => return Err(fail("--room can only be given once")),
+            Some("--save") if save.is_none() => {
+                save = Some(PathBuf::from(
+                    args.next().ok_or_else(|| fail("--save requires a path"))?,
+                ));
+            }
+            Some("--save") => return Err(fail("--save can only be given once")),
             _ if options && arg.as_encoded_bytes().starts_with(b"-") => {
                 return Err(fail(format!(
                     "unknown option {}; see --help",
@@ -47,5 +54,5 @@ fn run() -> Result<()> {
         Some(path) => path,
         None => env::current_exe()?.with_file_name("game.agge"),
     };
-    agge_studio::run_player_in_room(file, room.as_deref())
+    agge_studio::run_player_with_save(file, room.as_deref(), save)
 }

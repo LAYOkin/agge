@@ -51,6 +51,16 @@ fn pixel_preview_renders_uncommitted_local_edits_then_returns_exact_scope() {
             "agge_art",
             json!({"pixel":"gem","base":"other","ops":preview["ops"]}),
         ),
+        invoke(
+            6,
+            "agge_art",
+            json!({"pixel":"gem","frames":"enter","base":base,"compare":true,"scale":2,"ops":preview["ops"]}),
+        ),
+        invoke(
+            7,
+            "agge_art",
+            json!({"pixel":"gem","frames":"enter","base":base,"compare":true,"area":[0,0,1,1],"ops":preview["ops"]}),
+        ),
     ];
     let mut input = child.stdin.take().unwrap();
     for request in requests {
@@ -79,6 +89,12 @@ fn pixel_preview_renders_uncommitted_local_edits_then_returns_exact_scope() {
     assert_eq!(metadata(4)["data"][0]["data"], json!(["a"]));
     assert_eq!(metadata(4)["data"][1]["data"], "  px a 1 1");
     assert_eq!(result(5)["isError"], true);
+    assert_eq!(metadata(6)["size"], json!([6, 2]));
+    assert_eq!(metadata(6)["area"], json!([1, 1, 1, 1]));
+    assert_eq!(metadata(6)["changed"], 1);
+    assert_eq!(result(6)["content"][1]["mimeType"], "image/png");
+    assert_eq!(metadata(7)["changed"], 0);
+    assert_eq!(result(7)["content"].as_array().unwrap().len(), 1);
     assert_eq!(std::fs::read(&file).unwrap(), original);
 }
 

@@ -1,9 +1,11 @@
+mod graph;
 mod index;
 mod model;
 pub mod pixel;
 pub mod script;
 pub mod store;
 
+pub use graph::Direction;
 pub use index::*;
 pub use model::*;
 

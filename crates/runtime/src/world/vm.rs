@@ -162,6 +162,21 @@ impl World {
                 self.motion(entity, 0, x);
                 self.motion(entity, 1, y);
             }
+            Statement::Flip(x, y) => {
+                let x = self.eval(entity, context, x, 0)? != 0.;
+                let y = self.eval(entity, context, y, 0)? != 0.;
+                entity.effects.get_or_insert_with(Default::default).flip = Some([x, y]);
+            }
+            Statement::Drop(duration) => {
+                let ticks = self.eval(entity, context, duration, 0)?;
+                if !(0. ..=600.).contains(&ticks) || ticks.fract() != 0. {
+                    return Err("drop needs a whole tick count from 0 to 600".into());
+                }
+                entity
+                    .effects
+                    .get_or_insert_with(Default::default)
+                    .drop_until = self.tick.saturating_add(ticks as u64);
+            }
             Statement::Camera(x, y) => {
                 let x = bounded(self.eval(entity, context, x, 0)?)?;
                 let y = bounded(self.eval(entity, context, y, 0)?)?;

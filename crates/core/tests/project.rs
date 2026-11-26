@@ -6,6 +6,36 @@ fn edit(json: serde_json::Value) -> Edit {
 }
 
 #[test]
+fn grouped_layout_edits_intersect_filters_and_preserve_ids() {
+    let mut project = Project::parse(r#"agge/1 {}
+room main {"instances":[["row_0","pilot",0,0],["row_1","pilot",8,0],["row_2","other",4,0],["solo","pilot",3,0]],"camera":{"follow":"row_0"}}
+object pilot {}
+object other {}
+tilemap floor {"cell":8,"tiles":{"a":[[0,0,0,255]],"b":[[255,255,255,255],true]},"rows":["aaa","aba","aaa"]}
+"#).unwrap();
+    edit(json!({"op":"move_placements","room":"main","object":"pilot","prefix":"row_","area":[0,0,8,1],"by":[12,-2]})).apply(&mut project).unwrap();
+    edit(json!({"op":"replace_tiles","map":"floor","from":"a","to":"b","area":[1,0,2,2]}))
+        .apply(&mut project)
+        .unwrap();
+    Index::build(&project).require_valid().unwrap();
+    let Some(Resource::Room(room)) = project.get(Kind::Room, "main") else {
+        panic!("room")
+    };
+    assert_eq!(
+        room.instances
+            .iter()
+            .map(|i| [i.2, i.3])
+            .collect::<Vec<_>>(),
+        [[12., -2.], [8., 0.], [4., 0.], [3., 0.]]
+    );
+    assert_eq!(room.camera.follow.as_deref(), Some("row_0"));
+    let Some(Resource::Tilemap(map)) = project.get(Kind::Tilemap, "floor") else {
+        panic!("map")
+    };
+    assert_eq!(map.rows, ["abb", "abb", "aaa"]);
+}
+
+#[test]
 fn global_rename_follows_script_tokens_and_hud_fields_without_merging_symbols() {
     let mut project = Project::parse(
         r#"agge/1 {}

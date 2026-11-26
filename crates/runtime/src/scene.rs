@@ -4,8 +4,8 @@ use crate::{
     pixel_sheet,
 };
 use agge_core::{
-    Animation, Color, Index, Instance, Kind, Light, Object, Project, Resource, Result, Room, Shape,
-    Sprite, Tile, Tilemap, fail,
+    Animation, Backdrop, Color, Index, Instance, Kind, Light, Object, Project, Resource, Result,
+    Room, Shape, Sprite, Tile, Tilemap, fail,
     pixel::{Art, Renderer},
     read_asset,
 };
@@ -20,9 +20,17 @@ use std::{
 pub enum Draw<'a> {
     Rect(Bounds, Color),
     Circle(Bounds, Color),
-    Sprite(Bounds, &'a str, usize, Color),
+    Sprite(Bounds, &'a str, usize, Color, [bool; 2]),
+    Backdrop(BackdropQuad<'a>),
     TileLayer(&'a Tilemap, Bounds),
     Text([f32; 2], String, u32, Color),
+}
+
+#[derive(Clone, Debug)]
+pub struct BackdropQuad<'a> {
+    pub layer: &'a Backdrop,
+    pub bounds: Bounds,
+    pub uv: [[f32; 2]; 2],
 }
 
 #[derive(Default)]
@@ -172,6 +180,7 @@ pub fn edit_scene<'a>(
     view: Bounds,
     draw: &mut impl FnMut(Draw<'a>),
 ) {
+    backdrops(room, view, [0.; 2], draw);
     tiles(project, room, view, draw);
     let mut candidates = room_placements(project, room)
         .filter(|(_, _, bounds, _)| bounds.overlaps(view))
@@ -191,7 +200,7 @@ fn edit_object_draw<'a>(project: &'a Project, object: &'a Object, bounds: Bounds
         Some(Resource::Animation(clip)) => Some((clip, 0)),
         _ => None,
     };
-    object_draw(object, bounds, animation)
+    object_draw(object, bounds, animation, object.flip)
 }
 
 fn room_placements<'project, 'room>(
@@ -254,10 +263,11 @@ fn draw_order<T>(
 
 impl World {
     pub fn draw_scene<'a>(&'a self, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
+        backdrops(self.room(), view, self.camera(), draw);
         tiles(&self.project, self.room(), view, draw);
         let candidates = self.entities.values().filter_map(|entity| {
             let object = self.object(&entity.object);
-            let bounds = entity.bounds(object);
+            let bounds = Bounds::new(entity.x, entity.y, object.size[0], object.size[1]);
             (!object.hidden && bounds.overlaps(view)).then_some((entity.id, object, bounds, entity))
         });
         let mut paint = |(_, object, bounds, entity)| {
@@ -266,6 +276,7 @@ impl World {
                 bounds,
                 self.animation(entity)
                     .map(|(_, clip, elapsed)| (clip, elapsed)),
+                entity.flip(object),
             ));
         };
         if self.has_depth || self.room().y_sort {
@@ -284,7 +295,12 @@ impl World {
             let bounds = Bounds::new(spark.x - style.radius, spark.y - style.radius, d, d);
             if bounds.overlaps(view) {
                 let mut color = style.color;
-                color[3] = (color[3] as u32 * (style.life - spark.age) / style.life) as u8;
+                let fade = style.fade.unwrap_or(style.life);
+                if let Some(alpha) =
+                    (u32::from(color[3]) * (style.life - spark.age).min(fade)).checked_div(fade)
+                {
+                    color[3] = alpha as u8;
+                }
                 draw(Draw::Circle(bounds, color));
             }
         }
@@ -300,6 +316,42 @@ impl World {
         for entity in self.entities.values() {
             let object = self.object(&entity.object);
             visit_object_collider(object, entity.bounds(object), view, &mut visit);
+        }
+    }
+}
+
+fn backdrops<'a>(room: &'a Room, view: Bounds, camera: [f32; 2], draw: &mut impl FnMut(Draw<'a>)) {
+    for layer in &room.backdrops {
+        let [ox, oy] =
+            std::array::from_fn(|axis| layer.at[axis] + camera[axis] * (1. - layer.scroll[axis]));
+        let [width, height] = layer.size;
+        if width < 1. || height < 1. {
+            continue;
+        }
+        let [left, right] = if layer.repeat[0] {
+            [view.left, view.right]
+        } else {
+            [view.left.max(ox), view.right.min(ox + width)]
+        };
+        let [top, bottom] = if layer.repeat[1] {
+            [view.top, view.bottom]
+        } else {
+            [view.top.max(oy), view.bottom.min(oy + height)]
+        };
+        if left < right && top < bottom {
+            draw(Draw::Backdrop(BackdropQuad {
+                layer,
+                bounds: Bounds {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+                uv: [
+                    [(left - ox) / width, (top - oy) / height],
+                    [(right - ox) / width, (bottom - oy) / height],
+                ],
+            }));
         }
     }
 }
@@ -347,7 +399,9 @@ fn tiles<'a>(project: &'a Project, room: &Room, view: Bounds, draw: &mut impl Fn
 pub fn draw_tilemap<'a>(map: &'a Tilemap, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
     visible_tiles(map, view, |bounds, tile| {
         match (map.atlas.as_deref(), tile.frame()) {
-            (Some(atlas), Some(frame)) => draw(Draw::Sprite(bounds, atlas, frame, tile.color())),
+            (Some(atlas), Some(frame)) => {
+                draw(Draw::Sprite(bounds, atlas, frame, tile.color(), [false; 2]))
+            }
             _ => draw(Draw::Rect(bounds, tile.color())),
         }
     });
@@ -386,6 +440,7 @@ fn visible_tiles(map: &Tilemap, view: Bounds, mut visit: impl FnMut(Bounds, &Til
 pub enum RoomCollider {
     Solid(Bounds),
     OneWay(Bounds),
+    Hitbox(Bounds),
 }
 
 /// Visit the authored colliders visible in the room editor.
@@ -396,8 +451,13 @@ pub fn room_colliders(
     mut visit: impl FnMut(RoomCollider),
 ) {
     tile_colliders(project, room, view, &mut visit);
-    for (_, object, bounds, _) in room_placements(project, room) {
-        visit_object_collider(object, bounds, view, &mut visit);
+    for (_, object, _, item) in room_placements(project, room) {
+        visit_object_collider(
+            object,
+            Bounds::collider_at(object, item.2, item.3),
+            view,
+            &mut visit,
+        );
     }
 }
 
@@ -429,6 +489,8 @@ fn visit_object_collider(
             visit(RoomCollider::Solid(bounds));
         } else if object.one_way {
             visit(RoomCollider::OneWay(bounds));
+        } else if object.hitbox.is_some() {
+            visit(RoomCollider::Hitbox(bounds));
         }
     }
 }
@@ -437,14 +499,15 @@ fn object_draw<'a>(
     object: &'a Object,
     bounds: Bounds,
     animation: Option<(&'a Animation, u64)>,
+    flip: [bool; 2],
 ) -> Draw<'a> {
     if let Some((anim, elapsed)) = animation
         && let Some(slot) = anim.slot(elapsed)
     {
-        return Draw::Sprite(bounds, &anim.sprite, anim.frames[slot], object.color);
+        return Draw::Sprite(bounds, &anim.sprite, anim.frames[slot], object.color, flip);
     }
     if let Some(id) = &object.sprite {
-        Draw::Sprite(bounds, id, 0, object.color)
+        Draw::Sprite(bounds, id, 0, object.color, flip)
     } else if object.shape == Shape::Circle {
         Draw::Circle(bounds, object.color)
     } else {
@@ -560,22 +623,32 @@ fn raster(buffer: &mut RgbaImage, view: Bounds, draw: Draw<'_>, media: &Media, p
     match draw {
         Draw::Rect(b, color) => fill(b, &|_, _| Some(color)),
         Draw::Circle(b, color) => fill(b, &|u, v| inside_ellipse(u, v).then_some(color)),
-        Draw::Sprite(b, id, frame, tint) => {
+        Draw::Sprite(b, id, frame, tint, [flip_x, flip_y]) => {
             if let Some(([sx, sy, w, h], image)) = media.frame(project, id, frame) {
                 fill(b, &|u, v| {
-                    let mut color = image
-                        .get_pixel(
-                            sx + ((u * w as f32) as u32).min(w - 1),
-                            sy + ((v * h as f32) as u32).min(h - 1),
-                        )
-                        .0;
-                    for (c, t) in color.iter_mut().zip(tint) {
-                        *c = (*c as u32 * t as u32 / 255) as u8;
-                    }
-                    Some(color)
+                    let x = sample_axis(u, w, flip_x);
+                    let y = sample_axis(v, h, flip_y);
+                    Some(tinted(image.get_pixel(sx + x, sy + y).0, tint))
                 });
             } else {
                 fill(b, &|_, _| Some(tint));
+            }
+        }
+        Draw::Backdrop(quad) => {
+            if let Some(([sx, sy, w, h], image)) =
+                media.frame(project, &quad.layer.sprite, quad.layer.frame)
+            {
+                let [[u0, v0], [u1, v1]] = quad.uv;
+                fill(quad.bounds, &|u, v| {
+                    let u = (u0 + (u1 - u0) * u).rem_euclid(1.);
+                    let v = (v0 + (v1 - v0) * v).rem_euclid(1.);
+                    Some(tinted(
+                        image
+                            .get_pixel(sx + sample_axis(u, w, false), sy + sample_axis(v, h, false))
+                            .0,
+                        quad.layer.tint,
+                    ))
+                });
             }
         }
         Draw::TileLayer(map, visible) => {
@@ -605,6 +678,18 @@ fn raster(buffer: &mut RgbaImage, view: Bounds, draw: Draw<'_>, media: &Media, p
             }
         }
     }
+}
+
+fn sample_axis(uv: f32, edge: u32, flip: bool) -> u32 {
+    let pixel = ((uv * edge as f32) as u32).min(edge - 1);
+    if flip { edge - 1 - pixel } else { pixel }
+}
+
+fn tinted(mut color: Color, tint: Color) -> Color {
+    for (channel, multiplier) in color.iter_mut().zip(tint) {
+        *channel = (u32::from(*channel) * u32::from(multiplier) / 255) as u8;
+    }
+    color
 }
 
 pub fn encode_png(image: &RgbaImage) -> Result<Vec<u8>> {

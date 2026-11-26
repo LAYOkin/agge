@@ -129,8 +129,8 @@ fn tool_list() -> Vec<Value> {
     vec![
         tool(
             NAMES[0],
-            "Read IDs, fields, placements, pixel poses or cropped rows, metadata, refs or changes. read batches queries at one revision.",
-            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"pixel":text,"frame":text,"layer":text,"area":array,"placements":text,"object":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
+            "Read fields, pixel areas, diagnostics, or a transitive dependency walk. read batches queries at one revision.",
+            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"pixel":text,"frame":text,"layer":text,"area":array,"placements":text,"object":text,"outline":text,"symbol":text,"refs":text,"walk":{"type":["string","array"]},"direction":{"enum":["in","out","both"]},"depth":number,"diagnostics":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
             json!([]),
         ),
         tool(
@@ -148,7 +148,7 @@ fn tool_list() -> Vec<Value> {
         tool(
             NAMES[3],
             "Replay ticks with input [first,last,action], expect, sample, state or crop. Or run named replay cases with one summary.",
-            json!({"ticks":number,"room":text,"seed":{"type":"integer","minimum":0},"input":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
+            json!({"ticks":number,"from":text,"room":text,"seed":{"type":"integer","minimum":0},"input":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
             json!([]),
         ),
         tool(
@@ -165,8 +165,8 @@ fn tool_list() -> Vec<Value> {
         ),
         tool(
             NAMES[6],
-            "Inspect a pixel pose or contact sheet as PNG. Crop, scale, isolate a layer, or preview edits against a revision.",
-            json!({"pixel":text,"frames":{"type":["string","array"]},"layer":text,"area":array,"scale":number,"columns":number,"base":text,"ops":array}),
+            "Inspect pixel poses as PNG. Compare one edited pose against base to get changed pixels and a cropped before/after/mask.",
+            json!({"pixel":text,"frames":{"type":["string","array"]},"layer":text,"area":array,"scale":number,"columns":number,"compare":boolean,"base":text,"ops":array}),
             json!(["pixel"]),
         ),
     ]

@@ -71,6 +71,8 @@ Open **Runtime inspector** and choose **Copy state** to copy a JSON snapshot of 
 
 Turn on **Colliders** in the runtime inspector to see collision geometry follow moving entities and the playtest camera.
 
+Use **Mark tick** and **Restore tick** during a live playtest to try alternate inputs from the same simulation state. Restoring a mark ends the original replay recording. Turn on **Watch project files** to adopt external edits and media changes. Studio keeps the current scene running if an update is invalid. Changes to the current room's authored placements, viewport size, or tick rate require a restart. Saved replay playback and unsaved Studio drafts remain pinned.
+
 For examples of collision gameplay, open `examples/switchback/game.agge` for grounded jumps and one-way platforms, or `examples/bankshot/game.agge` for a short arcade game built around `hit_x` and `hit_y`.
 
 Cinder Circuit demonstrates collision filters and scripted animations. Its `replay.json` defines four named scenarios in one suite, including a projectile crossing a force field that blocks the pilot.

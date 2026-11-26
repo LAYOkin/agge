@@ -22,19 +22,19 @@ In Studio, open **Project → Keyboard bindings**, enter an action ID, and choos
 
 | Kind | Data |
 | --- | --- |
-| `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `maps`, `lights`, `darkness`, `ui` labels, `meters`, optional `music`, and `y_sort` |
-| `object` | `size`, RGBA `color`, `shape`, `sprite` or `animation`, `script`, `solid`, `one_way`, `hidden`, `gravity`, `depth`, collision `layer` and `mask` |
+| `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `backdrops` and `maps`, `lights`, `darkness`, `ui` labels, `meters`, optional `music` and `music_gain`, and `y_sort` |
+| `object` | `size`, RGBA `color`, `shape`, `sprite` or `animation`, `flip`, `script`, `solid`, `one_way`, `hitbox`, `hidden`, `gravity`, `depth`, collision `layer` and `mask` |
 | `sprite` | Project-relative PNG `file` with optional frame rectangles, or a `pixel` resource ID with optional named `poses` |
 | `animation` | Sprite ID, zero-based `frames`, `fps`, and optional `mode` (`loop`, `once`, or `ping_pong`) |
 | `tilemap` | Pixel `cell` size, optional pixel offset `at`, optional `atlas` sprite, palette `tiles`, and equal-width ASCII `rows`. A dot marks an empty tile |
 | `audio` | Project-relative WAV or OGG Vorbis `file` and optional `gain` |
-| `particle` | Burst `count`, `life` in ticks, pixel `speed` per second, `radius`, RGBA `color`, and optional `gravity` |
+| `particle` | Burst `count`, `life` in ticks, pixel `speed` per second, `radius`, RGBA `color`, optional `gravity`, and optional `fade` for the last N ticks (0 holds opacity) |
 | `palette` | Indexed `swatches`, optional light direction, shading ramps, and outline ink |
 | `pixel` | Canvas, palette style, layered drawing commands, and named poses |
 
 A label has pixel coordinates `at`, `text`, and optional `size`, `color`, and `value`. `value` names a global number appended to the label. Coordinates start at the top left. Positive Y points down. An object's position and collider use its top-left corner, even for round visuals.
 
-A HUD meter uses `at`, `size:[width,height]`, `value` (a global), `max`, and optional `color` and `track`. It fills left to right with the value clamped between zero and the maximum. A room's `music` names an audio clip. The native player loops it, keeps playing it across rooms that share the same clip ID, and stops it in a room without music.
+A HUD meter uses `at`, `size:[width,height]`, `value` (a global), `max`, and optional `color` and `track`. It fills left to right with the value clamped between zero and the maximum. A room's `music` names an audio clip and `music_gain` sets its relative volume (default 1). The native player loops it, keeps playing it across rooms that share the same clip ID, and stops it in a room without music.
 
 Draw order uses object `depth`, with smaller numbers drawn first. Room `y_sort:true` also sorts by the bottom of each object's bounds within the same depth, so actors farther down the screen draw in front. Equal positions retain instance order. Draw order leaves physics and scripts in their existing tick order.
 
@@ -47,6 +47,10 @@ room road {"size":[960,192],"camera":{"follow":"runner","dead":[64,0],"smooth":1
 ```
 
 The camera's `at` is an initial top-left world coordinate, defaulting to `[0,0]`. `follow` names a placement in the room. The camera tracks the center of its bounds after movement. `dead` is the width and height of an optional centered region the target can move within before the camera follows. `smooth` defaults to 0 for immediate tracking. Positive values move a fraction of the remaining distance each tick, capped at `min(smooth / hz, 1)`. The initial follow adjustment snaps after create events. If the target is destroyed, the camera keeps its last position. A room change resets the camera to the new room's configuration. The viewport stays within the room, and HUD positions stay relative to the viewport.
+
+### Backdrops
+
+Backdrops draw in array order, before tilemaps. Each backdrop names a `sprite`, with optional zero-based `frame`, `at:[x,y]`, draw `size:[width,height]` (default 64×64), `scroll:[x,y]`, `repeat:[x,y]` booleans, and RGBA `tint`. By default it uses the world origin and a scroll factor of 1 on both axes. Set an axis to 0 for a viewport-fixed layer or a fraction for parallax. Repeat fills the visible area along the selected axes.
 
 ### Tile palettes
 
@@ -85,6 +89,8 @@ step:
 | `emit particle` | Emit a particle burst at the instance position |
 | `sound audio` | Queue a clip for native playback |
 | `animate clip` or `animate clip, restart` | Switch the instance's clip, restarting when `restart` is nonzero |
+| `flip x, y` | Mirror the instance sprite on each axis whose expression is nonzero |
+| `drop ticks` | Ignore one-way platforms for up to 600 ticks, including this tick. Zero cancels |
 | `after name, ticks` | Start or replace a named instance timer. Zero cancels it |
 | `goto room` | Queue a room change |
 | `destroy` | End the event and remove the current instance |
@@ -118,7 +124,7 @@ At each tick, entities run in increasing ID order. After an entity's step, gravi
 
 `grounded()` returns `1` when the instance is stationary or descending vertically and a quarter-pixel downward sweep is blocked. `blocked(dx,dy)` tests a displacement against the same collision rules without changing position. Set `one_way:true` on objects that should block only downward movement crossing their top. An object can use `solid` or `one_way`. Overlap tests through `touch` apply to both.
 
-`layer` and `mask` are unsigned 16-bit sets. A moving object stops against a solid or one-way object when its mask intersects the obstacle's layer. Tiles use layer value `1`. By default objects are on layer `1` and check all layers. A mask of `0` ignores every blocker. Overlap queries through `touch` are independent of movement masks.
+`hitbox:[x,y,width,height]` overrides collision and overlap geometry relative to the object's draw origin. The default covers its full `size`. Authored `flip:[x,y]` and the script override affect sprite pixels only. `layer` and `mask` are unsigned 16-bit sets. A moving object stops against a solid or one-way object when its mask intersects the obstacle's layer. Tiles use layer value `1`. By default objects are on layer `1` and check all layers. A mask of `0` ignores every blocker. Overlap queries through `touch` are independent of movement masks.
 
 `touch("object", dx, dy)` tests the actor's bounds at an offset in pixels without moving it. It checks overlap at that location and does not sweep the path. Omit both offsets to test the current position. Only other live instances of the named object in the current room can match.
 

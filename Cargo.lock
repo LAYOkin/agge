@@ -53,6 +53,7 @@ name = "agge-runtime"
 version = "0.1.0"
 dependencies = [
  "agge-core",
+ "blake3",
  "font8x8",
  "image",
  "serde",

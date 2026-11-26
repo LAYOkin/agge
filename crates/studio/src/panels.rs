@@ -171,8 +171,48 @@ pub fn properties(
             tint(ui, "Background", &mut room.bg);
             field(ui, "Darkness", &mut room.darkness);
             link(ui, "Music", Kind::Audio, project, &mut room.music);
+            if room.music.is_some() {
+                field(ui, "Music gain", &mut room.music_gain);
+            }
             ui.checkbox(&mut room.y_sort, "Sort actors by feet");
             room_camera::properties(ui, room, project.settings.size);
+            ui.collapsing("Backdrop layers", |ui| {
+                let mut remove = None;
+                for (i, layer) in room.backdrops.iter_mut().enumerate() {
+                    ui.push_id(i, |ui| {
+                        choose(
+                            ui,
+                            "Backdrop sprite",
+                            Kind::Sprite,
+                            project,
+                            &mut layer.sprite,
+                            "Choose sprite",
+                        );
+                        field(ui, "Frame", &mut layer.frame);
+                        coordinates(ui, "Origin", &mut layer.at);
+                        coordinates(ui, "Tile size", &mut layer.size);
+                        coordinates(ui, "Camera scroll", &mut layer.scroll);
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut layer.repeat[0], "Repeat X");
+                            ui.checkbox(&mut layer.repeat[1], "Repeat Y");
+                        });
+                        tint(ui, "Tint", &mut layer.tint);
+                        if ui.button("Remove layer").clicked() {
+                            remove = Some(i);
+                        }
+                        ui.separator();
+                    });
+                }
+                if let Some(i) = remove {
+                    room.backdrops.remove(i);
+                }
+                if ui
+                    .add_enabled(room.backdrops.len() < 16, egui::Button::new("Add layer"))
+                    .clicked()
+                {
+                    room.backdrops.push(agge_core::Backdrop::default());
+                }
+            });
             ui.collapsing("Tilemap layers", |ui| {
                 let mut removal = None;
                 for (i, map) in room.maps.iter_mut().enumerate() {
@@ -338,6 +378,22 @@ pub fn properties(
             coordinates(ui, "Size", &mut object.size);
             tint(ui, "Tint", &mut object.color);
             ui.horizontal(|ui| {
+                ui.checkbox(&mut object.flip[0], "Flip sprite X");
+                ui.checkbox(&mut object.flip[1], "Flip sprite Y");
+            });
+            let mut custom = object.hitbox.is_some();
+            if ui.checkbox(&mut custom, "Custom hitbox").changed() {
+                object.hitbox = custom.then_some([0., 0., object.size[0], object.size[1]]);
+            }
+            if let Some([x, y, w, h]) = &mut object.hitbox {
+                let mut offset = [*x, *y];
+                let mut size = [*w, *h];
+                coordinates(ui, "Hitbox origin", &mut offset);
+                coordinates(ui, "Hitbox size", &mut size);
+                [*x, *y] = offset;
+                [*w, *h] = size;
+            }
+            ui.horizontal(|ui| {
                 ui.selectable_value(&mut object.shape, Shape::Rect, "Rectangle");
                 ui.selectable_value(&mut object.shape, Shape::Circle, "Ellipse");
             });
@@ -429,6 +485,13 @@ pub fn properties(
         Resource::Particle(particle) => {
             field(ui, "Count", &mut particle.count);
             field(ui, "Lifetime (ticks)", &mut particle.life);
+            let mut custom = particle.fade.is_some();
+            if ui.checkbox(&mut custom, "Custom fade").changed() {
+                particle.fade = custom.then_some(particle.life / 2);
+            }
+            if let Some(fade) = &mut particle.fade {
+                field(ui, "Fade ticks", fade);
+            }
             field(ui, "Speed", &mut particle.speed);
             field(ui, "Radius", &mut particle.radius);
             field(ui, "Gravity", &mut particle.gravity);
@@ -598,7 +661,13 @@ fn asset_preview(
             rect.width() / w as f32,
             media,
             project,
-            Draw::Sprite(Bounds::new(0., 0., w as f32, h as f32), id, frame, WHITE),
+            Draw::Sprite(
+                Bounds::new(0., 0., w as f32, h as f32),
+                id,
+                frame,
+                WHITE,
+                [false; 2],
+            ),
         );
     }
 }

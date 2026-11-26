@@ -361,7 +361,8 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>> {
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     write_atomic(path, &serde_json::to_vec(value)?, true)
 }
-fn write_atomic(path: &Path, bytes: &[u8], replace: bool) -> Result<()> {
+/// Write beside the destination, then publish a complete file in one operation.
+pub fn write_atomic(path: &Path, bytes: &[u8], replace: bool) -> Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

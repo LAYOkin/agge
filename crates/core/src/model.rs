@@ -233,6 +233,8 @@ pub struct Room {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub maps: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub backdrops: Vec<Backdrop>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub lights: Vec<Light>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ui: Vec<Label>,
@@ -240,6 +242,8 @@ pub struct Room {
     pub meters: Vec<Meter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub music: Option<String>,
+    #[serde(skip_serializing_if = "is_one")]
+    pub music_gain: f32,
     #[serde(skip_serializing_if = "no")]
     pub y_sort: bool,
     #[serde(skip_serializing_if = "zero")]
@@ -253,12 +257,40 @@ impl Default for Room {
             camera: Camera::default(),
             instances: vec![],
             maps: vec![],
+            backdrops: vec![],
             lights: vec![],
             ui: vec![],
             meters: vec![],
             music: None,
+            music_gain: 1.,
             y_sort: false,
             darkness: 0.,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Backdrop {
+    pub sprite: String,
+    pub frame: usize,
+    pub at: [f32; 2],
+    pub size: [f32; 2],
+    pub scroll: [f32; 2],
+    pub repeat: [bool; 2],
+    pub tint: Color,
+}
+
+impl Default for Backdrop {
+    fn default() -> Self {
+        Self {
+            sprite: String::new(),
+            frame: 0,
+            at: [0.; 2],
+            size: [64.; 2],
+            scroll: [1.; 2],
+            repeat: [false; 2],
+            tint: WHITE,
         }
     }
 }
@@ -289,6 +321,10 @@ pub struct Object {
     pub shape: Shape,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sprite: Option<String>,
+    #[serde(skip_serializing_if = "no_flip")]
+    pub flip: [bool; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hitbox: Option<[f32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -315,6 +351,8 @@ impl Default for Object {
             color: WHITE,
             shape: Shape::Rect,
             sprite: None,
+            flip: [false; 2],
+            hitbox: None,
             animation: None,
             script: None,
             solid: false,
@@ -326,6 +364,10 @@ impl Default for Object {
             mask: u16::MAX,
         }
     }
+}
+
+fn no_flip(value: &[bool; 2]) -> bool {
+    *value == [false; 2]
 }
 
 fn zero_depth(value: &i16) -> bool {
@@ -538,6 +580,32 @@ pub struct Tilemap {
 }
 
 impl Tilemap {
+    /// Replace a palette symbol without disturbing neighboring cells.
+    pub fn replace_in(&mut self, area: Option<[usize; 4]>, from: char, to: char) -> Result<()> {
+        for key in [from, to] {
+            if key != '.' && (!key.is_ascii_graphic() || !self.tiles.contains_key(&key)) {
+                return Err(fail("tile replacement needs defined symbols or '.'"));
+            }
+        }
+        let [x, y, w, h] = area.unwrap_or_else(|| {
+            [
+                0,
+                0,
+                self.rows.first().map_or(0, String::len),
+                self.rows.len(),
+            ]
+        });
+        let replacement = to.to_string();
+        for row in self.area_mut([x, y, w, h])? {
+            let range = x..x + w;
+            if row[range.clone()].contains(from) {
+                let next = row[range.clone()].replace(from, &replacement);
+                row.replace_range(range, &next);
+            }
+        }
+        Ok(())
+    }
+
     pub fn resize(
         &mut self,
         [width, height]: [usize; 2],
@@ -749,6 +817,8 @@ pub struct Particle {
     pub color: Color,
     #[serde(default, skip_serializing_if = "zero")]
     pub gravity: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fade: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

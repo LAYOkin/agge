@@ -22,6 +22,7 @@ agge undo|redo PROJECT [REVISION]
 agge test PROJECT JSON [CASE]
 agge inspect PROJECT JSON
 agge capture PROJECT JSON OUTPUT.png
+agge checkpoint PROJECT JSON OUTPUT.aggesave
 agge art PROJECT JSON OUTPUT.png
 agge knowledge PROJECT JSON
 agge mcp PROJECT
@@ -72,7 +73,7 @@ fn run() -> Result<bool> {
         "init" | "check" | "mcp" => 2..=2,
         "query" | "undo" | "redo" => 2..=3,
         "edit" | "inspect" | "knowledge" => 3..=3,
-        "capture" | "art" => 4..=4,
+        "capture" | "art" | "checkpoint" => 4..=4,
         "export" | "test" => 3..=4,
         _ => return Err(fail(format!("unknown command {command}"))),
     };
@@ -113,17 +114,21 @@ fn run() -> Result<bool> {
             }
             output(value)
         }
-        "test" | "inspect" | "capture" => {
+        "test" | "inspect" | "capture" | "checkpoint" => {
             let mode = match command {
                 "test" => match args.get(3) {
                     Some(case) => service::SimulationMode::TestCase(argument_text(case)?),
                     None => service::SimulationMode::Test,
                 },
                 "capture" => service::SimulationMode::Capture,
+                "checkpoint" => service::SimulationMode::Checkpoint,
                 _ => service::SimulationMode::Inspect,
             };
             let (value, ok, image) = service::simulate(&store, argument()?, mode)?;
             match (image, command) {
+                (Some(bytes), "checkpoint") => {
+                    agge_core::store::write_atomic(Path::new(&args[3]), &bytes, false)?;
+                }
                 (Some(bytes), "capture") => {
                     write_capture(store.path(), Path::new(&args[3]), &bytes)?;
                 }

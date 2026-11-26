@@ -245,6 +245,7 @@ step:
     let bounds = |collider| match collider {
         RoomCollider::Solid(bounds) => (false, bounds.left, bounds.top, bounds.right),
         RoomCollider::OneWay(bounds) => (true, bounds.left, bounds.top, bounds.right),
+        RoomCollider::Hitbox(_) => unreachable!("fixture uses default shape"),
     };
     let mut outlines = Vec::new();
     room_colliders(

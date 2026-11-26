@@ -25,9 +25,13 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 | `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,expect?,sample?,select?,crop?,base?}` |
 | `agge_history` | `agge undo` or `agge redo` | `{redo,base?}` |
 | `agge_knowledge` | `agge knowledge PROJECT JSON` | `{op,key?,value?}` |
-| `agge_art` | `agge art PROJECT JSON OUTPUT.png` | `{pixel,frames?,layer?,area?,scale?,columns?,base?,ops?}` |
+| `agge_art` | `agge art PROJECT JSON OUTPUT.png` | `{pixel,frames?,layer?,area?,scale?,columns?,compare?,base?,ops?}` |
 
 A CLI JSON argument can be inline, `@file.json`, or `-` for stdin. Exit codes are 0 for success, 1 for a failed validation or replay assertion, and 2 for a usage or operation error. MCP returns compact JSON in a text item and includes PNG data as a separate image item when requested.
+
+Use `{"walk":"palette/brass","limit":12}` to find downstream resources in one query. Each item is `[id,distance]`. Provide an array to walk from several changed IDs, or set `direction:"out"` to follow dependencies. Use `direction:"in"` on `refs` to retrieve only callers and their source locations. Use `{"diagnostics":"pixel/diver","limit":5}` for scoped source validation. Pass `base` when following a cursor.
+
+Use `move_placements` with `room` and `by:[dx,dy]` to move a group. Optional `object`, `prefix`, and `area:[x,y,w,h]` filters combine. The area tests authored top-left positions. Use `replace_tiles` with `map`, `from`, `to`, and optional grid `area` to change matching cells in one operation.
 
 Query `{"schema":"pixel"}` for the drawing forms. Use `{"pixel":"scout","frame":"idle","area":[6,5,8,5]}` for exact glyph rows, or request a PNG of one region, layer, or several poses with `agge_art`. A PNG request can preview a few edits without writing history. See the [pixel-art workflow](pixel-art.md).
 
@@ -117,6 +121,8 @@ Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main
 CLI and MCP reports include the first eight failed assertions and return the remaining count as `omitted_failures`. This applies to single replays, suite cases, and guarded edits. Re-run a smaller set of assertions when inspecting later failures.
 
 Pass a case name after the suite on the CLI to run only that case, for example `agge test PROJECT @replay.json startup`.
+
+Save a successful replay prefix with `agge checkpoint PROJECT @prefix.json project-folder/branch.aggesave`. Then use `{"from":"branch.aggesave","ticks":30,"sample":[[0,"entity/hero/x"],[30,"entity/hero/x"]]}` in a single test or `agge_run`. `from` is relative to the project directory. Replay inputs and observations count ticks from the checkpoint, and the world inspector shows the absolute tick. Use the same canonical project source. AGGE preserves input edges, timers, animations, camera, entities, globals, and both random streams.
 
 
 

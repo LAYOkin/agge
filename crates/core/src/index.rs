@@ -25,6 +25,7 @@ pub struct Index {
     pub diagnostics: Vec<Diagnostic>,
     pub programs: BTreeMap<String, script::Program>,
     pub pixels: BTreeMap<String, std::sync::Arc<crate::pixel::Art>>,
+    pub(crate) graph: std::sync::OnceLock<crate::graph::Graph>,
 }
 impl Index {
     fn error(&mut self, code: &'static str, at: &str, message: impl Into<String>) {
@@ -104,6 +105,7 @@ impl Index {
                     let mut ids = BTreeSet::new();
                     if room.instances.len() > 4096
                         || room.maps.len() > 128
+                        || room.backdrops.len() > 16
                         || room.lights.len() > 64
                         || room.ui.len() > 128
                     {
@@ -177,8 +179,28 @@ impl Index {
                     for (i, map) in room.maps.iter().enumerate() {
                         index.link(&key, Kind::Tilemap, map, &format!("maps/{i}"));
                     }
+                    for (i, layer) in room.backdrops.iter().enumerate() {
+                        let at = format!("backdrops/{i}");
+                        index.link(&key, Kind::Sprite, &layer.sprite, &format!("{at}/sprite"));
+                        if !layer.at.into_iter().all(coord)
+                            || !layer.size.into_iter().all(|n| (1. ..=32768.).contains(&n))
+                            || !layer.scroll.into_iter().all(|n| (-4. ..=4.).contains(&n))
+                            || index
+                                .sprite_frame_count(project, &layer.sprite)
+                                .is_some_and(|frames| layer.frame >= frames)
+                        {
+                            index.error(
+                                "backdrop",
+                                &format!("{key}/{at}"),
+                                "invalid backdrop geometry, scroll or frame",
+                            );
+                        }
+                    }
                     if let Some(music) = &room.music {
                         index.link(&key, Kind::Audio, music, "music");
+                    }
+                    if !(0. ..=4.).contains(&room.music_gain) {
+                        index.error("music_gain", &key, "room music gain must be 0–4");
                     }
                     for (i, label) in room.ui.iter().enumerate() {
                         if !label.value.is_empty() {
@@ -236,8 +258,12 @@ impl Index {
                     }
                     if !object.size.into_iter().all(|x| (0.01..=4096.).contains(&x))
                         || !coord(object.gravity)
+                        || object.hitbox.is_some_and(|[x, y, w, h]| {
+                            ![x, y].into_iter().all(|n| (-4096. ..=4096.).contains(&n))
+                                || ![w, h].into_iter().all(|n| (0.01..=4096.).contains(&n))
+                        })
                     {
-                        index.error("object_range", &key, "invalid size or gravity");
+                        index.error("object_range", &key, "invalid size, hitbox or gravity");
                     }
                 }
                 Resource::Sprite(sprite) => {
@@ -380,6 +406,7 @@ impl Index {
                         || !(0. ..=4096.).contains(&p.speed)
                         || !(0.1..=512.).contains(&p.radius)
                         || !coord(p.gravity)
+                        || p.fade.is_some_and(|fade| fade > p.life)
                     {
                         index.error(
                             "particle_range",
@@ -583,6 +610,13 @@ pub enum Edit {
         #[serde(default)]
         remove: bool,
     },
+    MovePlacements {
+        room: String,
+        object: Option<String>,
+        prefix: Option<String>,
+        area: Option<[f32; 4]>,
+        by: [f32; 2],
+    },
     Grid {
         room: String,
         object: String,
@@ -638,6 +672,12 @@ pub enum Edit {
         map: String,
         at: [usize; 2],
         tile: char,
+    },
+    ReplaceTiles {
+        map: String,
+        area: Option<[usize; 4]>,
+        from: char,
+        to: char,
     },
     Stamp {
         map: String,
@@ -789,6 +829,41 @@ impl Edit {
                     }
                 }
             }
+            Self::MovePlacements {
+                room,
+                object,
+                prefix,
+                area,
+                by: [dx, dy],
+            } => {
+                if !coord(dx)
+                    || !coord(dy)
+                    || area.is_some_and(|[x, y, w, h]| {
+                        ![x, y, w, h].into_iter().all(coord) || w <= 0. || h <= 0.
+                    })
+                {
+                    return Err(fail("invalid move vector or placement area"));
+                }
+                let layout = room_mut(project, &room)?;
+                let mut matched = false;
+                for item in &mut layout.instances {
+                    if object.as_ref().is_none_or(|id| id == &item.1)
+                        && prefix
+                            .as_ref()
+                            .is_none_or(|prefix| item.0.starts_with(prefix))
+                        && area.is_none_or(|[x, y, w, h]| {
+                            item.2 >= x && item.2 < x + w && item.3 >= y && item.3 < y + h
+                        })
+                    {
+                        item.2 += dx;
+                        item.3 += dy;
+                        matched = true;
+                    }
+                }
+                if !matched {
+                    return Err(fail("no matching placements"));
+                }
+            }
             Self::Grid {
                 room,
                 object,
@@ -899,6 +974,12 @@ impl Edit {
                 map_mut(project, &map)?.resize(size, offset, tile)?;
             }
             Self::Flood { map, at, tile } => map_mut(project, &map)?.flood(at, tile)?,
+            Self::ReplaceTiles {
+                map,
+                area,
+                from,
+                to,
+            } => map_mut(project, &map)?.replace_in(area, from, to)?,
             Self::Stamp {
                 map,
                 at: [x, y],
@@ -1041,6 +1122,11 @@ fn rename(project: &mut Project, kind: Kind, id: &str, to: &str) -> Result<()> {
                 room.instances.iter_mut().for_each(|i| replace(&mut i.1))
             }
             Resource::Room(room) if kind == Kind::Tilemap => room.maps.iter_mut().for_each(replace),
+            Resource::Room(room) if kind == Kind::Sprite => {
+                for backdrop in &mut room.backdrops {
+                    replace(&mut backdrop.sprite);
+                }
+            }
             Resource::Room(room) if kind == Kind::Audio => {
                 if let Some(music) = &mut room.music {
                     replace(music);

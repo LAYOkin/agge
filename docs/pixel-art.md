@@ -7,6 +7,8 @@
 3. Use plain shapes for a silhouette, then place exact pixel clusters with `rows`, `line`, or `px`. Build repeated parts once. Keep silhouettes, material clusters, moving pieces, and effects on layers you can edit independently.
 4. Inspect a region as glyphs or PNG. Send the last observed revision as `base` in a patch. Attach the result to a sprite, animation, or tilemap and run a replay.
 
+Add `"compare":true` to an `agge_art` preview with `ops` and one pose. It reports the changed RGBA pixel count and returns a PNG with before, after, and a magenta change mask. Omit `area` to crop to the changed pixels automatically. Pass a layer to see changes hidden under the composite. A visible no-op returns `changed:0` without a PNG. The source resource must already exist and retain its canvas size.
+
 ## Style and source
 
 ```text

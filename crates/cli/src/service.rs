@@ -1,11 +1,11 @@
 use agge_core::{
-    Edit, Index, Kind, Resource, Result, fail,
+    Direction, Edit, Index, Kind, Resource, Result, fail,
     script::{self, Event},
     store::{Loaded, PROJECT_LIMIT, Store},
 };
 use agge_runtime::{
-    CompiledGame, Media, Replay, ReplaySuite, Report, asset_info, capture, encode_png, pixel_sheet,
-    replay, replay_compiled,
+    Checkpoint, CompiledGame, Media, Replay, ReplaySuite, Report, asset_info, capture, encode_png,
+    pixel_compare, pixel_sheet, replay, replay_compiled, replay_from,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -57,6 +57,10 @@ struct Query {
     outline: Option<String>,
     symbol: Option<String>,
     refs: Option<String>,
+    walk: Option<Roots>,
+    diagnostics: Option<String>,
+    direction: Option<Direction>,
+    depth: Option<u8>,
     prefix: Option<String>,
     session: Option<String>,
     #[serde(default)]
@@ -65,6 +69,13 @@ struct Query {
     offset: usize,
     #[serde(default = "default_limit")]
     limit: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Roots {
+    One(String),
+    Many(Vec<String>),
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -170,10 +181,15 @@ impl Query {
             + usize::from(args.event.is_some())
             + usize::from(args.function.is_some())
             + usize::from(args.area.is_some() && args.pixel.is_none());
-        if modes.into_iter().filter(|option| option.is_some()).count() > 1
+        if modes.into_iter().filter(|option| option.is_some()).count()
+            + usize::from(args.walk.is_some())
+            + usize::from(args.diagnostics.is_some())
+            > 1
             || selectors > 1
             || selectors != 0 && args.get.is_none()
             || args.symbol.is_some() && args.outline.is_none()
+            || args.direction.is_some() && args.walk.is_none() && args.refs.is_none()
+            || args.depth.is_some() && args.walk.is_none()
             || (args.frame.is_some() || args.layer.is_some()) && args.pixel.is_none()
             || args.object.is_some() && args.placements.is_none()
             || args.base.is_some()
@@ -197,6 +213,34 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
         ));
     }
     let mut result = json!({});
+    if let Some(prefix) = args.diagnostics {
+        let index = index.get_or_init(|| Index::build(&loaded.project));
+        let matches = index
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.at.starts_with(&prefix));
+        page(&mut result, matches, args.offset, args.limit);
+        return Ok(result);
+    }
+    if let Some(roots) = args.walk {
+        let roots = match roots {
+            Roots::One(root) => vec![root],
+            Roots::Many(roots) => roots,
+        };
+        let depth = args.depth.unwrap_or(8);
+        if !(1..=16).contains(&roots.len()) || !(1..=16).contains(&depth) {
+            return Err(fail("walk requires 1–16 roots and depth 1–16"));
+        }
+        let index = index.get_or_init(|| Index::build(&loaded.project));
+        for root in &roots {
+            if !index.has_node(root) {
+                return Err(fail(format!("absent graph node {root}")));
+            }
+        }
+        let visited = index.walk(&roots, args.direction.unwrap_or(Direction::In), depth);
+        page(&mut result, visited.into_iter(), args.offset, args.limit);
+        return Ok(result);
+    }
     if let Some(id) = args.pixel {
         let index = index.get_or_init(|| Index::build(&loaded.project));
         let art = art_at(index, &id)?;
@@ -367,9 +411,8 @@ fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<V
     if let Some(key) = args.refs {
         let index = index.get_or_init(|| Index::build(&loaded.project));
         let links = index
-            .edges
-            .iter()
-            .filter(|edge| edge.from == key || edge.to == key);
+            .references(&key, args.direction.unwrap_or(Direction::Both))
+            .into_iter();
         page(&mut result, links, args.offset, args.limit);
     } else {
         let prefix = args.prefix.as_deref().unwrap_or_default();
@@ -420,6 +463,8 @@ struct ArtRequest {
     scale: Option<usize>,
     columns: Option<usize>,
     #[serde(default)]
+    compare: bool,
+    #[serde(default)]
     ops: Vec<Edit>,
 }
 
@@ -431,6 +476,9 @@ pub fn art(store: &Store, args: Value, cache: &mut QueryCache) -> Result<Simulat
     let (loaded, memo) = cache.snapshot(store)?;
     require_revision(loaded, request.base.as_deref())?;
     let preview = !request.ops.is_empty();
+    if request.compare && (!preview || request.columns.is_some()) {
+        return Err(fail("art comparison requires preview edits and no columns"));
+    }
     let candidate;
     let index = if preview {
         let mut project = loaded.project.clone();
@@ -454,9 +502,37 @@ pub fn art(store: &Store, args: Value, cache: &mut QueryCache) -> Result<Simulat
         Some(ArtFrames::List(names)) => names.iter().map(String::as_str).collect(),
         None => art.frame_names().take(1).collect(),
     };
+    let scale = request.scale.unwrap_or(1);
+    if request.compare {
+        let [frame] = frames.as_slice() else {
+            return Err(fail("art comparison accepts one pose"));
+        };
+        let baseline = memo.get_or_init(|| Index::build(&loaded.project));
+        let before = art_at(baseline, &request.pixel)?;
+        let diff = pixel_compare(
+            before,
+            art,
+            frame,
+            request.layer.as_deref(),
+            request.area,
+            scale,
+            512,
+        )?;
+        let mut result = json!({
+            "revision":loaded.revision,"pixel":request.pixel,"frames":frames,
+            "preview":true,"changed":diff.changed
+        });
+        let png = if let Some(image) = diff.image {
+            result["area"] = json!(diff.area);
+            result["size"] = json!([image.width(), image.height()]);
+            Some(encode_png(&image)?)
+        } else {
+            None
+        };
+        return Ok((result, true, png));
+    }
     let area = art.area(request.area)?;
     let columns = request.columns.unwrap_or_else(|| frames.len().clamp(1, 4));
-    let scale = request.scale.unwrap_or(1);
     let png = pixel_sheet(
         art,
         &frames,
@@ -677,6 +753,7 @@ pub enum SimulationMode<'a> {
     TestCase(&'a str),
     Inspect,
     Capture,
+    Checkpoint,
 }
 
 pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Result<Simulation> {
@@ -687,8 +764,8 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
         return run_suite(store, args, Some(selected));
     }
     if args.get("cases").is_some() {
-        if mode == SimulationMode::Capture {
-            return Err(fail("capture requires a single replay"));
+        if matches!(mode, SimulationMode::Capture | SimulationMode::Checkpoint) {
+            return Err(fail("capture and checkpoint require a single replay"));
         }
         return run_suite(store, args, None);
     }
@@ -697,6 +774,8 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
         .ok_or_else(|| fail("expected replay object"))?;
     let base: Option<String> =
         serde_json::from_value(fields.remove("base").unwrap_or(Value::Null))?;
+    let from: Option<String> =
+        serde_json::from_value(fields.remove("from").unwrap_or(Value::Null))?;
     let selection: Option<Selection> = fields
         .remove("select")
         .map(serde_json::from_value)
@@ -711,16 +790,35 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
             .map(serde_json::from_value)
             .transpose()?
             .unwrap_or(false);
-    if mode == SimulationMode::Test && (selection.is_some() || area.is_some()) {
+    if matches!(mode, SimulationMode::Test | SimulationMode::Checkpoint)
+        && (selection.is_some() || area.is_some())
+    {
         return Err(fail("test accepts replay fields only"));
     }
     let replay_spec: Replay = serde_json::from_value(args)?;
     let loaded = store.load()?;
     require_revision(&loaded, base.as_deref())?;
-    let (world, report) = replay(loaded.project, &replay_spec)?;
+    let (world, report) = if let Some(path) = from {
+        let bytes = agge_core::read_asset(store.root(), &path)?;
+        let checkpoint = Checkpoint::decode(&bytes)?;
+        let world = CompiledGame::new(loaded.project)?.restore(checkpoint)?;
+        replay_from(world, &replay_spec)?
+    } else {
+        replay(loaded.project, &replay_spec)?
+    };
     let ok = report.passed();
     let mut result =
         json!({"revision":loaded.revision,"passed":ok,"report":report_json(&report,true)});
+    if mode == SimulationMode::Checkpoint {
+        let bytes = if ok {
+            let saved = world.checkpoint()?;
+            result["checkpoint"] = json!({"tick": saved.tick(), "room":saved.room()});
+            Some(saved.encode()?)
+        } else {
+            None
+        };
+        return Ok((result, ok, bytes));
+    }
     if let Some(selection) = selection {
         result["state"] =
             json!(world.snapshot(selection.object.as_deref(), selection.placement.as_deref()));
@@ -763,6 +861,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"splice","id":"drive","at":[3,1],"text":"  move 180 * dt, 0"},
             {"op":"place","room":"main","object":"player","id":"hero","at":[32,48]},
             {"op":"placement","room":"main","id":"hero","to":"pilot","at":[48,48]},
+            {"op":"move_placements","room":"main","object":"player","area":[0,0,96,64],"by":[16,0]},
             {"op":"grid","room":"main","object":"player","prefix":"row","at":[0,0],"step":[32,32],"size":[5,2]},
             {"op":"camera","room":"main","size":[1280,720],"follow":"hero","dead":[80,40],"smooth":12},
             {"op":"slice","id":"terrain","cell":[16,16],"grid":[4,2]},
@@ -771,6 +870,7 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"fill","map":"layout","area":[0,0,8,8],"tile":"#","border":true},
             {"op":"resize_map","map":"layout","size":[24,16],"offset":[2,1]},
             {"op":"flood","map":"layout","at":[2,3],"tile":"#"},
+            {"op":"replace_tiles","map":"layout","area":[2,3,8,6],"from":"a","to":"b"},
             {"op":"stamp","map":"layout","at":[1,1],"rows":[".#","#."]}
         ]),
         "room" => {

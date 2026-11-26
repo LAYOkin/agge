@@ -279,6 +279,7 @@ fn pixel_sprite_canvas(ui: &mut Ui, work: &mut Workbench, id: &str, sprite: &Spr
                 id,
                 work.tool.frame,
                 agge_core::WHITE,
+                [false; 2],
             ),
         );
     }

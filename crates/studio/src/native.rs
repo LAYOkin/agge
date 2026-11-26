@@ -2,8 +2,8 @@ use agge_core::{
     Color, Kind, Light, Project, Resource, Result, Tilemap, fail, read_asset, store::Store,
 };
 use agge_runtime::{
-    Bounds, CompiledGame, Draw, Input, Media, Replay, ReplayPlayback, ReplayRecorder, RoomCollider,
-    World, draw_tilemap, shade_lights,
+    Bounds, Checkpoint, CompiledGame, Draw, Input, Media, Replay, ReplayPlayback, ReplayRecorder,
+    RoomCollider, World, draw_tilemap, shade_lights,
 };
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, Stroke, StrokeKind, TextureHandle,
@@ -37,6 +37,14 @@ pub fn run_player(file: PathBuf) -> Result<()> {
 }
 
 pub fn run_player_in_room(file: PathBuf, room: Option<&str>) -> Result<()> {
+    run_player_with_save(file, room, None)
+}
+
+pub fn run_player_with_save(
+    file: PathBuf,
+    room: Option<&str>,
+    save: Option<PathBuf>,
+) -> Result<()> {
     let store = Store::new(file);
     let project = store.load()?.project;
     let play = Play::new(project, store.root().to_owned(), room)?;
@@ -54,6 +62,8 @@ pub fn run_player_in_room(file: PathBuf, room: Option<&str>) -> Result<()> {
             Ok(Box::new(Player {
                 play,
                 canvas: Canvas::default(),
+                save,
+                message: None,
             }))
         }),
     )
@@ -63,10 +73,54 @@ pub fn run_player_in_room(file: PathBuf, room: Option<&str>) -> Result<()> {
 struct Player {
     play: Play,
     canvas: Canvas,
+    save: Option<PathBuf>,
+    message: Option<(String, bool)>,
 }
 impl eframe::App for Player {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if let Some(path) = &self.save {
+            let request = ctx.input_mut(|input| {
+                if input.consume_key(egui::Modifiers::NONE, Key::F6) {
+                    Some(false)
+                } else if input.consume_key(egui::Modifiers::NONE, Key::F9) {
+                    Some(true)
+                } else {
+                    None
+                }
+            });
+            if let Some(load) = request {
+                let result = if load {
+                    Checkpoint::read(path).and_then(|save| self.play.restore(save))
+                } else {
+                    self.play.save_to(path)
+                };
+                self.message = Some(match result {
+                    Ok(()) => (
+                        if load { "Game restored" } else { "Game saved" }.into(),
+                        false,
+                    ),
+                    Err(error) => (error.to_string(), true),
+                });
+            }
+        }
         self.play.update(ctx);
+        if let Some((message, bad)) = self.message.clone() {
+            egui::TopBottomPanel::bottom("save_status").show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.colored_label(
+                        if bad {
+                            Color32::LIGHT_RED
+                        } else {
+                            Color32::LIGHT_GREEN
+                        },
+                        message,
+                    );
+                    if ui.button("Dismiss").clicked() {
+                        self.message = None;
+                    }
+                });
+            });
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(Color32::BLACK))
             .show(ctx, |ui| {
@@ -108,31 +162,43 @@ pub struct Play {
     pending: Input,
     bindings: KeyBindings,
     music_id: Option<String>,
+    music_gain: Option<f32>,
 }
 impl Play {
     pub fn new(project: Project, root: PathBuf, room: Option<&str>) -> Result<Self> {
         let bindings = compile_bindings(&project);
-        let world = World::preview(project, room)?;
-        Self::start(Simulation::Live(Box::new(world)), root, bindings, false)
+        let game = CompiledGame::new(project)?;
+        let world = game.preview(room)?;
+        let media = Media::load_indexed(world.project(), &root, game.index())?;
+        Ok(Self::start(
+            Simulation::Live(Box::new(world)),
+            media,
+            root,
+            bindings,
+            false,
+        ))
     }
 
     pub fn from_replay(project: Project, root: PathBuf, replay: Arc<Replay>) -> Result<Self> {
-        let playback = ReplayPlayback::new(&CompiledGame::new(project)?, replay)?;
-        Self::start(
+        let game = CompiledGame::new(project)?;
+        let playback = ReplayPlayback::new(&game, replay)?;
+        let media = Media::load_indexed(playback.world().project(), &root, game.index())?;
+        Ok(Self::start(
             Simulation::Replay(Box::new(playback)),
+            media,
             root,
             KeyBindings::new(),
             true,
-        )
+        ))
     }
 
     fn start(
         simulation: Simulation,
+        media: Media,
         root: PathBuf,
         bindings: KeyBindings,
         paused: bool,
-    ) -> Result<Self> {
-        let media = Media::load(simulation.world().project(), &root)?;
+    ) -> Self {
         let mut play = Self {
             simulation,
             media,
@@ -145,15 +211,72 @@ impl Play {
             pending: Input::new(),
             bindings,
             music_id: None,
+            music_gain: None,
         };
         if play.world().fault().is_none() {
             play.audio();
         }
-        Ok(play)
+        play
     }
 
     pub fn world(&self) -> &World {
         self.simulation.world()
+    }
+
+    fn save_to(&self, path: &Path) -> Result<()> {
+        let save = self.world().checkpoint()?;
+        match Checkpoint::read(path) {
+            Ok(previous) => {
+                CompiledGame::new(self.world().project().clone())?.restore(previous)?;
+                save.write(path, true)
+            }
+            Err(error)
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+            {
+                save.write(path, false)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn restore(&mut self, save: Checkpoint) -> Result<()> {
+        if self.playback().is_some() {
+            return Err(fail("restore requires a live playtest"));
+        }
+        let game = CompiledGame::new(self.world().project().clone())?;
+        let world = game.restore(save)?;
+        self.replace_world(world);
+        Ok(())
+    }
+
+    pub fn reload(&mut self, project: Project) -> Result<()> {
+        if self.playback().is_some() {
+            return Err(fail("reload requires a live playtest"));
+        }
+        let bindings = compile_bindings(&project);
+        let game = CompiledGame::new(project)?;
+        let world = game.reload_live(self.world())?;
+        let media = Media::load_indexed(world.project(), &self.root, game.index())?;
+        self.media = media;
+        self.bindings = bindings;
+        self.replace_world(world);
+        Ok(())
+    }
+
+    fn replace_world(&mut self, mut world: World) {
+        // Previously delivered sound effects do not play twice.
+        world.drain_audio();
+        self.simulation = Simulation::Live(Box::new(world));
+        self.recording = None;
+        self.last = None;
+        self.elapsed = 0.;
+        self.pending.clear();
+        self.audio = AudioOutput::default();
+        self.music_id = None;
+        self.music_gain = None;
+        self.audio();
     }
 
     pub fn playback(&self) -> Option<&ReplayPlayback<Arc<Replay>>> {
@@ -182,12 +305,24 @@ impl Play {
             self.music_id.clone_from(&world.room().music);
             let music = self.music_id.as_deref().and_then(|id| {
                 match world.project().get(Kind::Audio, id) {
-                    Some(Resource::Audio(audio)) => Some((audio.file.as_str(), audio.gain)),
+                    Some(Resource::Audio(audio)) => {
+                        Some((audio.file.as_str(), audio.gain * world.room().music_gain))
+                    }
                     _ => None,
                 }
             });
             self.audio.music(&self.root, music);
             self.audio.pause_music(self.paused);
+            self.music_gain = None;
+        }
+        let gain = world.room().music_gain;
+        if self.music_gain != Some(gain) {
+            self.music_gain = Some(gain);
+            if let (Some(sink), Some(id)) = (&self.audio.music, &self.music_id)
+                && let Some(Resource::Audio(audio)) = world.project().get(Kind::Audio, id)
+            {
+                sink.set_volume(gain * audio.gain);
+            }
         }
         for id in sounds {
             if let Some(Resource::Audio(audio)) = world.project().get(Kind::Audio, &id) {
@@ -542,6 +677,7 @@ step:
 #[derive(Default)]
 pub struct Canvas {
     textures: BTreeMap<String, TextureHandle>,
+    repeated: BTreeMap<String, BTreeMap<usize, TextureHandle>>,
     lighting: Option<Lightmap>,
 }
 
@@ -664,20 +800,53 @@ impl Canvas {
                     color(tint),
                 ));
             }
-            Draw::Sprite(b, id, frame, tint) => {
+            Draw::Sprite(b, id, frame, tint, [fx, fy]) => {
                 if let Some(([x, y, w, h], image)) = media.frame(project, id, frame)
                     && let Some(texture) = self.sprite_texture(ctx, media, id)
                 {
                     let width = image.width() as f32;
                     let height = image.height() as f32;
-                    let uv = Rect::from_min_max(
-                        Pos2::new(x as f32 / width, y as f32 / height),
-                        Pos2::new((x + w) as f32 / width, (y + h) as f32 / height),
-                    );
+                    let [mut x0, mut x1] = [x as f32 / width, (x + w) as f32 / width];
+                    let [mut y0, mut y1] = [y as f32 / height, (y + h) as f32 / height];
+                    if fx {
+                        std::mem::swap(&mut x0, &mut x1);
+                    }
+                    if fy {
+                        std::mem::swap(&mut y0, &mut y1);
+                    }
+                    let uv = Rect::from_min_max(Pos2::new(x0, y0), Pos2::new(x1, y1));
                     painter.image(texture, rect(b), uv, color(tint));
                 } else {
                     painter.rect_filled(rect(b), 0., color(tint));
                 }
+            }
+            Draw::Backdrop(quad) => {
+                let id = &quad.layer.sprite;
+                let frame = quad.layer.frame;
+                let textures = self.repeated.entry(id.clone()).or_default();
+                if let std::collections::btree_map::Entry::Vacant(entry) = textures.entry(frame) {
+                    let Some(([x, y, w, h], image)) = media.frame(project, id, frame) else {
+                        return;
+                    };
+                    let stride = image.width() as usize * 4;
+                    let mut data = Vec::with_capacity((w * h * 4) as usize);
+                    for row in y..y + h {
+                        let at = row as usize * stride + x as usize * 4;
+                        data.extend_from_slice(&image.as_raw()[at..at + w as usize * 4]);
+                    }
+                    entry.insert(ctx.load_texture(
+                        id,
+                        ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &data),
+                        TextureOptions::NEAREST_REPEAT,
+                    ));
+                }
+                let [[u0, v0], [u1, v1]] = quad.uv;
+                painter.image(
+                    textures[&frame].id(),
+                    rect(quad.bounds),
+                    Rect::from_min_max(Pos2::new(u0, v0), Pos2::new(u1, v1)),
+                    color(quad.layer.tint),
+                );
             }
             Draw::Text([x, y], text, size, tint) => {
                 painter.text(
@@ -708,7 +877,7 @@ impl Canvas {
         let mut regions = BTreeMap::new();
         draw_tilemap(map, view, &mut |tile| match tile {
             Draw::Rect(bounds, tint) => flat.add_colored_rect(screen_rect(bounds), color(tint)),
-            Draw::Sprite(bounds, id, frame, tint) => {
+            Draw::Sprite(bounds, id, frame, tint, _) => {
                 let uv = regions.entry(frame).or_insert_with(|| {
                     media
                         .frame(project, id, frame)
@@ -828,6 +997,17 @@ impl Canvas {
 pub fn paint_collider(painter: &Painter, origin: Pos2, scale: f32, collider: RoomCollider) {
     let to_screen = |x, y| origin + Vec2::new(x, y) * scale;
     match collider {
+        RoomCollider::Hitbox(bounds) => {
+            painter.rect_stroke(
+                Rect::from_min_max(
+                    to_screen(bounds.left, bounds.top),
+                    to_screen(bounds.right, bounds.bottom),
+                ),
+                0.,
+                Stroke::new(1., Color32::from_rgb(164, 230, 173)),
+                StrokeKind::Inside,
+            );
+        }
         RoomCollider::Solid(bounds) => {
             painter.rect_stroke(
                 Rect::from_min_max(

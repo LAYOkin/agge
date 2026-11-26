@@ -1,4 +1,5 @@
 mod camera;
+mod checkpoint;
 mod spatial;
 mod tiles;
 mod vm;
@@ -6,7 +7,8 @@ mod vm;
 use agge_core::{
     Animation, Index, Kind, Object, Project, Resource, Result, Room, fail, script::Event,
 };
-use serde::Serialize;
+pub use checkpoint::Checkpoint;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
@@ -38,6 +40,13 @@ impl Bounds {
             && self.right > other.left
             && self.top < other.bottom
             && self.bottom > other.top
+    }
+
+    pub fn collider_at(object: &Object, x: f32, y: f32) -> Self {
+        let [dx, dy, w, h] = object
+            .hitbox
+            .unwrap_or([0., 0., object.size[0], object.size[1]]);
+        Self::new(x + dx, y + dy, w, h)
     }
     fn swept(self, axis: usize, amount: f32) -> Self {
         let mut result = self;
@@ -111,6 +120,10 @@ struct ActorEffects {
     animation_since: u64,
     #[serde(skip)]
     timers: BTreeMap<String, u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flip: Option<[bool; 2]>,
+    #[serde(skip)]
+    drop_until: u64,
 }
 
 impl Entity {
@@ -125,7 +138,18 @@ impl Entity {
     }
 
     pub fn bounds(&self, object: &Object) -> Bounds {
-        Bounds::new(self.x, self.y, object.size[0], object.size[1])
+        Bounds::collider_at(object, self.x, self.y)
+    }
+    fn dropping(&self, tick: u64) -> bool {
+        self.effects
+            .as_ref()
+            .is_some_and(|effects| effects.drop_until > tick)
+    }
+    pub(crate) fn flip(&self, object: &Object) -> [bool; 2] {
+        self.effects
+            .as_ref()
+            .and_then(|effects| effects.flip)
+            .unwrap_or(object.flip)
     }
     pub fn timer(&self, name: &str, tick: u64) -> (u64, bool) {
         self.effects
@@ -138,7 +162,8 @@ impl Entity {
         Some((effects.animation.as_deref()?, effects.animation_since))
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Spark {
     pub x: f32,
     pub y: f32,
@@ -276,6 +301,10 @@ impl CompiledGame {
 
     pub fn preview(&self, room: Option<&str>) -> Result<World> {
         self.preview_seeded(room, None)
+    }
+
+    pub fn index(&self) -> &Index {
+        &self.index
     }
 
     pub(crate) fn preview_seeded(&self, room: Option<&str>, seed: Option<u64>) -> Result<World> {
@@ -542,13 +571,7 @@ impl World {
         Ok(())
     }
     fn enter_room(&mut self) -> std::result::Result<(), Fault> {
-        self.camera = camera::ViewCamera::new(self.room(), self.project.settings.size);
-        self.room_tiles = self
-            .room()
-            .maps
-            .iter()
-            .filter_map(|id| self.collision_tiles.get(id).cloned())
-            .collect();
+        self.prepare_room_geometry();
         self.entities.clear();
         self.members.clear();
         self.placements.clear();
@@ -565,6 +588,36 @@ impl World {
         self.spawn_queued()?;
         self.update_camera(true);
         Ok(())
+    }
+    fn prepare_room_geometry(&mut self) {
+        self.camera = camera::ViewCamera::new(self.room(), self.project.settings.size);
+        self.room_tiles = self
+            .room()
+            .maps
+            .iter()
+            .filter_map(|id| self.collision_tiles.get(id).cloned())
+            .collect();
+    }
+
+    fn runs_step(&self, object: &str) -> bool {
+        let object = self.object(object);
+        object.gravity != 0.
+            || object.script.as_ref().is_some_and(|script| {
+                self.index.programs[script]
+                    .events
+                    .contains_key(&Event::Step)
+            })
+    }
+
+    fn register_entity(&mut self, entity: Entity) {
+        if let Some(placement) = &entity.placement {
+            self.placements.insert(placement.clone(), entity.id);
+        }
+        self.members
+            .entry(entity.object.clone())
+            .or_default()
+            .insert(entity.id);
+        self.keep_entity(entity);
     }
     fn update_camera(&mut self, entering: bool) {
         let target = self
@@ -593,17 +646,9 @@ impl World {
             for (object, placement, x, y) in batch {
                 let id = self.next_id;
                 self.next_id += 1;
-                if let Some(placement) = &placement {
-                    self.placements.insert(placement.clone(), id);
-                }
-                self.members.entry(object.clone()).or_default().insert(id);
-                let definition = self.object(&object);
-                let runs_step = definition.gravity != 0.
-                    || definition.script.as_ref().is_some_and(|script| {
-                        index.programs[script].events.contains_key(&Event::Step)
-                    });
-                self.keep_entity(Entity {
+                self.register_entity(Entity {
                     id,
+                    runs_step: self.runs_step(&object),
                     object,
                     placement,
                     x,
@@ -614,7 +659,6 @@ impl World {
                     effects: None,
                     born: self.tick,
                     dead: false,
-                    runs_step,
                 });
             }
             for id in first..self.next_id {
@@ -658,8 +702,7 @@ impl World {
     }
 
     fn touches(&self, entity: &Entity, id: &str, [dx, dy]: [f32; 2]) -> bool {
-        let [width, height] = self.object(&entity.object).size;
-        let bounds = Bounds::new(entity.x + dx, entity.y + dy, width, height);
+        let bounds = Bounds::collider_at(self.object(&entity.object), entity.x + dx, entity.y + dy);
         let object = self.object(id);
         self.overlaps[id].any(bounds, |candidate| {
             self.entities
@@ -673,12 +716,12 @@ impl World {
 
     fn blocked(&self, entity: &Entity, x: f32, y: f32) -> bool {
         let object = self.object(&entity.object);
-        if x != 0. && self.sweep(entity.id, object.mask, entity.bounds(object), 0, x) != x {
+        if x != 0. && self.sweep(entity, object.mask, entity.bounds(object), 0, x) != x {
             return true;
         }
         let horizontal = (entity.x + x).clamp(-1_000_000., 1_000_000.);
-        let bounds = Bounds::new(horizontal, entity.y, object.size[0], object.size[1]);
-        y != 0. && self.sweep(entity.id, object.mask, bounds, 1, y) != y
+        let bounds = Bounds::collider_at(object, horizontal, entity.y);
+        y != 0. && self.sweep(entity, object.mask, bounds, 1, y) != y
     }
 
     fn motion(&self, entity: &mut Entity, axis: usize, delta: f32) -> bool {
@@ -686,7 +729,7 @@ impl World {
             return false;
         }
         let object = self.object(&entity.object);
-        let moved = self.sweep(entity.id, object.mask, entity.bounds(object), axis, delta);
+        let moved = self.sweep(entity, object.mask, entity.bounds(object), axis, delta);
         let position = if axis == 0 {
             &mut entity.x
         } else {
@@ -696,18 +739,19 @@ impl World {
         moved != delta
     }
 
-    fn sweep(&self, mover: u64, mask: u16, bounds: Bounds, axis: usize, delta: f32) -> f32 {
+    fn sweep(&self, mover: &Entity, mask: u16, bounds: Bounds, axis: usize, delta: f32) -> f32 {
         if mask == 0 {
             return delta;
         }
         let swept = bounds.swept(axis, delta);
         let mut move_by = delta;
+        let catch_one_way = axis == 1 && delta > 0. && !mover.dropping(self.tick);
         self.solids.visit(swept, |id| {
-            if id != mover
+            if id != mover.id
                 && let Some(other) = self.entities.get(&id)
             {
                 let object = self.object(&other.object);
-                if mask & object.layer != 0 && (!object.one_way || (axis == 1 && delta > 0.)) {
+                if mask & object.layer != 0 && (!object.one_way || catch_one_way) {
                     move_by = bounds.clamp_motion(other.bounds(object), axis, move_by);
                 }
             }

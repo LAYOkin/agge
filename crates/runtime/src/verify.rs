@@ -178,11 +178,18 @@ pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
 }
 
 pub fn replay_compiled(game: &CompiledGame, spec: &Replay) -> Result<(World, Report)> {
-    let mut playback = ReplayPlayback::new(game, spec)?;
+    Ok(finish(ReplayPlayback::new(game, spec)?))
+}
+
+pub fn replay_from(world: World, spec: &Replay) -> Result<(World, Report)> {
+    Ok(finish(ReplayPlayback::resume(world, spec)?))
+}
+
+fn finish(mut playback: ReplayPlayback<&Replay>) -> (World, Report) {
     while !playback.finished() {
         playback.step();
     }
-    Ok((playback.world, playback.report))
+    (playback.world, playback.report)
 }
 
 /// Drive a replay one tick at a time and verify observations before the caller
@@ -200,6 +207,20 @@ pub struct ReplayPlayback<S> {
 
 impl<S: Borrow<Replay>> ReplayPlayback<S> {
     pub fn new(game: &CompiledGame, spec: S) -> Result<Self> {
+        Self::start(spec, |replay| {
+            game.preview_seeded(replay.room.as_deref(), replay.seed)
+        })
+    }
+
+    pub fn resume(world: World, spec: S) -> Result<Self> {
+        let replay = spec.borrow();
+        if replay.room.is_some() || replay.seed.is_some() {
+            return Err(fail("resumed replay already has a room and random state"));
+        }
+        Self::start(spec, |_| Ok(world))
+    }
+
+    fn start(spec: S, make_world: impl FnOnce(&Replay) -> Result<World>) -> Result<Self> {
         let replay = spec.borrow();
         if replay.ticks > TICK_LIMIT
             || replay.input.len() > SPAN_LIMIT
@@ -234,7 +255,7 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
             })
             .collect::<Vec<_>>();
         changes.sort_unstable_by_key(|(tick, _, _)| *tick);
-        let world = game.preview_seeded(replay.room.as_deref(), replay.seed)?;
+        let world = make_world(replay)?;
         let report = Report {
             ticks: 0,
             assertions: 0,

@@ -39,7 +39,9 @@ fn export_preserves_the_revision_of_a_noncanonical_project() {
     assert!(replay.status.success(), "{replay:?}");
 }
 
-#[cfg(unix)]
+// The raw-byte fixture needs filenames that aren't valid UTF-8. macOS
+// filesystems such as APFS don't accept those names.
+#[cfg(target_os = "linux")]
 #[test]
 fn cli_accepts_native_paths_for_projects_and_outputs() {
     use std::{ffi::OsStr, os::unix::ffi::OsStrExt};

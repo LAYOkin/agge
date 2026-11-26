@@ -574,47 +574,49 @@ impl Workbench {
     }
     fn dialogs(&mut self, ctx: &Context) {
         if let Some(mut settings) = self.settings.take() {
-            let mut shown = true;
-            let mut apply = false;
-            egui::Window::new("Project settings")
-                .collapsible(false)
-                .open(&mut shown)
-                .show(ctx, |ui| {
-                    ui.label("Title");
-                    ui.text_edit_singleline(&mut settings.title);
-                    ui.horizontal(|ui| {
-                        ui.label("Launch room");
-                        egui::ComboBox::from_id_salt("start_room")
-                            .selected_text(&settings.start)
-                            .show_ui(ui, |ui| {
-                                for (kind, id) in self
-                                    .loaded
-                                    .project
-                                    .resources
-                                    .keys()
-                                    .filter(|(kind, _)| *kind == Kind::Room)
-                                {
-                                    debug_assert_eq!(*kind, Kind::Room);
-                                    ui.selectable_value(&mut settings.start, id.clone(), id);
-                                }
-                            });
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Viewport");
-                        for value in &mut settings.size {
-                            ui.add(egui::DragValue::new(value).range(1..=4096));
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Ticks per second");
-                        ui.add(egui::DragValue::new(&mut settings.hz).range(1..=240));
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Seed");
-                        ui.add(egui::DragValue::new(&mut settings.seed));
-                    });
-                    apply = ui.button("Apply settings").clicked();
+            let dialog = egui::Modal::new(egui::Id::new("project_settings")).show(ctx, |ui| {
+                ui.heading("Project settings");
+                ui.label("Title");
+                ui.text_edit_singleline(&mut settings.title);
+                ui.horizontal(|ui| {
+                    ui.label("Launch room");
+                    egui::ComboBox::from_id_salt("start_room")
+                        .selected_text(&settings.start)
+                        .show_ui(ui, |ui| {
+                            for (kind, id) in self
+                                .loaded
+                                .project
+                                .resources
+                                .keys()
+                                .filter(|(kind, _)| *kind == Kind::Room)
+                            {
+                                debug_assert_eq!(*kind, Kind::Room);
+                                ui.selectable_value(&mut settings.start, id.clone(), id);
+                            }
+                        });
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Viewport");
+                    for value in &mut settings.size {
+                        ui.add(egui::DragValue::new(value).range(1..=4096));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Ticks per second");
+                    ui.add(egui::DragValue::new(&mut settings.hz).range(1..=240));
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Seed");
+                    ui.add(egui::DragValue::new(&mut settings.seed));
+                });
+                ui.horizontal(|ui| {
+                    let apply = ui.button("Apply settings").clicked();
+                    let cancel = ui.button("Cancel").clicked();
+                    (apply, cancel)
+                })
+                .inner
+            });
+            let (apply, cancel) = dialog.inner;
             if apply {
                 let result = self.store.update(Some(&self.loaded.revision), |project| {
                     project.settings = settings.clone();
@@ -630,31 +632,32 @@ impl Workbench {
                         self.settings = Some(settings);
                     }
                 }
-            } else if shown {
+            } else if !cancel {
                 self.settings = Some(settings);
             }
         }
         if let Some((mut kind, mut id)) = self.create.take() {
-            let mut open = true;
-            let mut create = false;
-            egui::Window::new("New asset")
-                .collapsible(false)
-                .resizable(false)
-                .open(&mut open)
-                .show(ctx, |ui| {
-                    egui::ComboBox::from_label("Kind")
-                        .selected_text(kind.name())
-                        .show_ui(ui, |ui| {
-                            for option in Kind::ALL {
-                                ui.selectable_value(&mut kind, option, option.name());
-                            }
-                        });
-                    ui.add(egui::TextEdit::singleline(&mut id).hint_text("resource_id"));
-                    create = ui.button("Create draft").clicked();
-                });
+            let dialog = egui::Modal::new(egui::Id::new("new_asset")).show(ctx, |ui| {
+                ui.heading("New asset");
+                egui::ComboBox::from_label("Kind")
+                    .selected_text(kind.name())
+                    .show_ui(ui, |ui| {
+                        for option in Kind::ALL {
+                            ui.selectable_value(&mut kind, option, option.name());
+                        }
+                    });
+                ui.add(egui::TextEdit::singleline(&mut id).hint_text("resource_id"));
+                ui.horizontal(|ui| {
+                    let create = ui.button("Create draft").clicked();
+                    let cancel = ui.button("Cancel").clicked();
+                    (create, cancel)
+                })
+                .inner
+            });
+            let (create, cancel) = dialog.inner;
             if create {
                 self.command(|s| s.new_resource(kind, id));
-            } else if open {
+            } else if !cancel {
                 self.create = Some((kind, id));
             }
         }
@@ -677,16 +680,15 @@ impl Workbench {
         }
     }
     fn ui(&mut self, ctx: &Context) {
-        if !self.close_prompt
-            && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5))
-        {
+        let dialog_open = self.close_prompt || self.settings.is_some() || self.create.is_some();
+        if !dialog_open && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
             if self.play.is_some() {
                 self.play = None;
             } else {
                 self.command(Self::play);
             }
         }
-        if !self.close_prompt
+        if !dialog_open
             && self.play.is_none()
             && ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S))
         {

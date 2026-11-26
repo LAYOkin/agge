@@ -6,10 +6,10 @@ use crate::{
     viewport::{Camera, PRIMARY, stroke_cells},
 };
 use agge_core::{
-    AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Object, Project,
-    Resource, Room, Shape, Tilemap, WHITE,
+    AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Project, Resource, Room,
+    Shape, Tilemap, WHITE,
 };
-use agge_runtime::{Bounds, Draw, Media, draw_hud, edit_scene};
+use agge_runtime::{Bounds, Draw, Media, draw_hud, edit_scene, pick_placement};
 use agge_studio::{color, fit};
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::time::{Duration, Instant};
@@ -615,17 +615,7 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
     let snapped = |v: f32| (v / snap).round() * snap;
     let select_at = |position: Pos2, room: &Room| {
         let p = view.local(position);
-        room.instances
-            .iter()
-            .rev()
-            .find(|i| {
-                let Some(Resource::Object(Object { size, .. })) = project.get(Kind::Object, &i.1)
-                else {
-                    return false;
-                };
-                (i.2..i.2 + size[0]).contains(&p.x) && (i.3..i.3 + size[1]).contains(&p.y)
-            })
-            .map(|i| i.0.clone())
+        pick_placement(project, room, [p.x, p.y]).map(str::to_owned)
     };
     if response.clicked_by(PRIMARY)
         && let Some(pos) = response

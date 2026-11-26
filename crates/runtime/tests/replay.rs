@@ -1,6 +1,7 @@
 use agge_core::Project;
 use agge_runtime::{
-    CompiledGame, Input, Media, Replay, ReplayRecorder, Scalar, capture, replay, replay_compiled,
+    CompiledGame, Input, Media, Replay, ReplayRecorder, Scalar, capture, pick_placement, replay,
+    replay_compiled,
 };
 use std::path::Path;
 
@@ -93,6 +94,18 @@ object blue {"size":[8,8],"color":[20,70,210,255],"depth":1}
     let image = image::load_from_memory(&png).unwrap().into_rgba8();
     assert_eq!(image.get_pixel(2, 2).0, [20, 70, 210, 255]);
     assert_eq!(image.get_pixel(9, 2).0, [210, 20, 70, 255]);
+    assert_eq!(
+        pick_placement(world.project(), world.room(), [10., 16.]),
+        Some("high")
+    );
+    assert_eq!(
+        pick_placement(world.project(), world.room(), [17., 16.]),
+        Some("front")
+    );
+    assert_eq!(
+        pick_placement(world.project(), world.room(), [40., 40.]),
+        None
+    );
 }
 
 #[test]

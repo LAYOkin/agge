@@ -3,8 +3,8 @@ use crate::{
     asset::{audio_info, png_decoder},
 };
 use agge_core::{
-    Animation, Color, Kind, Light, Object, Project, Resource, Result, Room, Shape, Tilemap, fail,
-    read_asset,
+    Animation, Color, Instance, Kind, Light, Object, Project, Resource, Result, Room, Shape,
+    Tilemap, fail, read_asset,
 };
 use image::{ImageEncoder, RgbaImage, codecs::png::PngEncoder};
 use std::{
@@ -106,22 +106,11 @@ pub fn edit_scene<'a>(
     draw: &mut impl FnMut(Draw<'a>),
 ) {
     tiles(project, room, view, draw);
-    let mut candidates = room
-        .instances
-        .iter()
-        .enumerate()
-        .filter_map(|(order, i)| {
-            let Resource::Object(object) = project.get(Kind::Object, &i.1)? else {
-                return None;
-            };
-            let bounds = Bounds::new(i.2, i.3, object.size[0], object.size[1]);
-            bounds
-                .overlaps(view)
-                .then_some((order as u64, object, bounds, ()))
-        })
+    let mut candidates = room_placements(project, room)
+        .filter(|(_, _, bounds, _)| bounds.overlaps(view))
         .collect::<Vec<_>>();
     sort_draws(&mut candidates, room.y_sort);
-    for (_, object, bounds, ()) in candidates {
+    for (_, object, bounds, _) in candidates {
         let clip = object
             .animation
             .as_deref()
@@ -134,19 +123,51 @@ pub fn edit_scene<'a>(
     }
 }
 
+fn room_placements<'project, 'room>(
+    project: &'project Project,
+    room: &'room Room,
+) -> impl Iterator<Item = (u64, &'project Object, Bounds, &'room Instance)> {
+    room.instances
+        .iter()
+        .enumerate()
+        .filter_map(|(order, placement)| {
+            let Resource::Object(object) = project.get(Kind::Object, &placement.1)? else {
+                return None;
+            };
+            let bounds = Bounds::new(placement.2, placement.3, object.size[0], object.size[1]);
+            Some((order as u64, object, bounds, placement))
+        })
+}
+
+/// Pick the frontmost room placement whose bounds contain the point.
+pub fn pick_placement<'a>(project: &Project, room: &'a Room, [x, y]: [f32; 2]) -> Option<&'a str> {
+    room_placements(project, room)
+        .filter(|(_, _, bounds, _)| {
+            (bounds.left..bounds.right).contains(&x) && (bounds.top..bounds.bottom).contains(&y)
+        })
+        .max_by(|a, b| draw_order(a, b, room.y_sort))
+        .map(|(_, _, _, placement)| placement.0.as_str())
+}
+
 fn sort_draws<T>(items: &mut [(u64, &Object, Bounds, T)], y_sort: bool) {
-    items.sort_unstable_by(|a, b| {
-        a.1.depth
-            .cmp(&b.1.depth)
-            .then_with(|| {
-                if y_sort {
-                    a.2.bottom.total_cmp(&b.2.bottom)
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            })
-            .then_with(|| a.0.cmp(&b.0))
-    });
+    items.sort_unstable_by(|a, b| draw_order(a, b, y_sort));
+}
+
+fn draw_order<T>(
+    a: &(u64, &Object, Bounds, T),
+    b: &(u64, &Object, Bounds, T),
+    y_sort: bool,
+) -> std::cmp::Ordering {
+    a.1.depth
+        .cmp(&b.1.depth)
+        .then_with(|| {
+            if y_sort {
+                a.2.bottom.total_cmp(&b.2.bottom)
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .then_with(|| a.0.cmp(&b.0))
 }
 
 impl World {

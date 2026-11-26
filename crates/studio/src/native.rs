@@ -76,7 +76,7 @@ pub struct Play {
     pub audio: AudioOutput,
     pub recording: Option<ReplayRecorder>,
     root: PathBuf,
-    last: Instant,
+    last: Option<Instant>,
     elapsed: f64,
     pending: Input,
     music_id: Option<String>,
@@ -92,7 +92,7 @@ impl Play {
             audio: AudioOutput::default(),
             recording: None,
             root,
-            last: Instant::now(),
+            last: None,
             elapsed: 0.,
             pending: Input::new(),
             music_id: None,
@@ -136,21 +136,24 @@ impl Play {
         }
     }
     pub fn update(&mut self, ctx: &egui::Context) {
+        self.update_at(ctx, Instant::now());
+    }
+    fn update_at(&mut self, ctx: &egui::Context, now: Instant) {
         self.audio
             .pause_music(self.paused || self.world.fault().is_some());
         if self.world.fault().is_some() {
             return;
         }
-        let now = Instant::now();
         if self.paused {
-            self.last = now;
+            self.last = None;
             self.elapsed = 0.;
             self.pending.clear();
             return;
         }
         let dt = 1. / self.world.project().settings.hz as f64;
-        self.elapsed += (now - self.last).as_secs_f64().min(0.25);
-        self.last = now;
+        if let Some(last) = self.last.replace(now) {
+            self.elapsed += (now - last).as_secs_f64().min(0.25);
+        }
         let (held, pressed) = actions(ctx, self.world.project());
         self.pending.extend(pressed);
         for _ in 0..12 {
@@ -299,6 +302,27 @@ fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn play_clock_does_not_catch_up_after_startup_or_pause() {
+        let mut play = Play::new(Project::default(), PathBuf::new(), None).unwrap();
+        let ctx = egui::Context::default();
+        let first_frame = Instant::now() + Duration::from_secs(2);
+        let frame_time = Duration::from_millis(20);
+        play.update_at(&ctx, first_frame);
+        assert_eq!(play.world.snapshot(None, None).tick, 0);
+        play.update_at(&ctx, first_frame + frame_time);
+        assert_eq!(play.world.snapshot(None, None).tick, 1);
+
+        play.paused = true;
+        play.update_at(&ctx, first_frame + Duration::from_secs(1));
+        play.paused = false;
+        let resume = first_frame + Duration::from_secs(3);
+        play.update_at(&ctx, resume);
+        assert_eq!(play.world.snapshot(None, None).tick, 1);
+        play.update_at(&ctx, resume + frame_time);
+        assert_eq!(play.world.snapshot(None, None).tick, 2);
+    }
 
     #[test]
     fn cinder_music_decoder_repeats_from_the_first_sample() {

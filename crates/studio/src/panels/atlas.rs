@@ -259,6 +259,20 @@ pub(super) fn tile_properties(
             }
         });
     }
+    let selected = tools.brush;
+    if map.tiles.contains_key(&selected) {
+        let in_use = map.rows.iter().any(|row| row.contains(selected));
+        if ui
+            .add_enabled(!in_use, egui::Button::new("Remove selected tile"))
+            .on_disabled_hover_text(
+                "Erase or replace every cell using this tile before removing it.",
+            )
+            .clicked()
+        {
+            map.tiles.remove(&selected);
+            tools.brush = '.';
+        }
+    }
     ui.horizontal(|ui| {
         ui.add(
             egui::TextEdit::singleline(&mut tools.palette_key)

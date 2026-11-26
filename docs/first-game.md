@@ -28,6 +28,8 @@ Use the mouse wheel to zoom at the pointer and drag with the middle mouse button
 
 Select **Fill** and click a cell to replace its connected region with the current brush. Fill reaches matching cells that share an edge. Switch back to **Paint** for individual tiles and strokes.
 
+To delete a palette entry, select it and choose **Remove selected tile**. Erase or replace any cells that use it first.
+
 For regularly spaced sprites, open **Slice grid**, set frame dimensions and the number of columns and rows, and generate the frames. Add an origin or spacing for sheets with margins or gutters. Select a rectangle on the full sheet to edit that frame or check it in **Frame preview**.
 
 To paint textured tiles, select the sheet under **Atlas** in the tilemap inspector. **Map sprite frames** assigns consecutive frames to the keys in the order you enter them. Supply the subset that should block movement under **Solid keys**. You can also select one palette key to change its frame, tint, or collision flag. Signal Runner's station uses a solid wall tile and a non-solid guide light from the same PNG.

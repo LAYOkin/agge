@@ -263,6 +263,7 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
     let value = match (parts.next()?, parts.next(), parts.next(), parts.next()) {
         ("room", None, None, None) => return Some(Scalar::Text(world.room_id().into())),
         ("music", None, None, None) => return Some(Scalar::Text(world.room().music.clone()?)),
+        ("sound", Some(id), None, None) => world.queued_sound_count(id)? as f32,
         ("particles", None, None, None) => world.particles.len() as f32,
         ("count", Some(object), None, None) => world.count(object) as f32,
         ("grounded", Some(placement), None, None) => {

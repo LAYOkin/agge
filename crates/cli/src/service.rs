@@ -569,7 +569,7 @@ fn guide(key: &str) -> Result<Value> {
             json!({"count":12,"life":30,"speed":120,"radius":2,"color":[230,200,110,255],"gravity":80})
         }
         "replay" => {
-            json!({"ticks":20,"input":[[1,5,"right"]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"fields":["room","particles","camera/x","camera/y","grounded/placement","animation/placement","frame/placement","timer/placement/name","music","count/object","global/name","entity/placement/property"]})
+            json!({"ticks":20,"input":[[1,5,"right"]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"fields":["room","particles","camera/x","camera/y","grounded/placement","animation/placement","frame/placement","timer/placement/name","music","sound/audio","count/object","global/name","entity/placement/property"]})
         }
         "suite" => {
             json!({"cases":{"arrival":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}},"detail":false})

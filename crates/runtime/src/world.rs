@@ -404,6 +404,10 @@ impl World {
     pub fn drain_audio(&mut self) -> Vec<String> {
         std::mem::take(&mut self.audio)
     }
+    pub(crate) fn queued_sound_count(&self, id: &str) -> Option<usize> {
+        self.project.get(Kind::Audio, id)?;
+        Some(self.audio.iter().filter(|queued| *queued == id).count())
+    }
     pub(crate) fn object(&self, name: &str) -> &Object {
         &self.objects[name]
     }

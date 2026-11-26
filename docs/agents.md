@@ -78,6 +78,8 @@ Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Asser
 
 Use `animation/placement` for the current clip ID, `frame/placement` for its sheet frame, and `timer/placement/name` for remaining ticks. `music` returns the current room's configured audio ID if present.
 
+Use `sound/audio_id` to count how many times a sound effect was queued on a tick. For example, `{"at":12,"field":"sound/ping","is":1}` checks for one cue. A known clip that was silent returns `0`. An unknown clip ID returns no value. Tick 0 includes sounds from startup create events, and the check works without playing audio.
+
 ```json
 {
   "ticks": 12,

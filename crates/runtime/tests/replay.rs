@@ -163,6 +163,43 @@ step:
 }
 
 #[test]
+fn replay_counts_queued_sounds_by_tick_and_clip() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+audio ping {"file":"ping.wav"}
+audio chime {"file":"ping.wav"}
+script drive
+create:
+  sound ping
+step:
+  if pressed("fire")
+    sound ping
+    sound chime
+    sound ping
+  end
+---
+"#,
+    )
+    .unwrap();
+    let spec = serde_json::from_str(
+        r#"{"ticks":3,"input":[[2,3,"fire"]],"expect":[
+          {"at":0,"field":"sound/ping","is":1},
+          {"at":1,"field":"sound/ping","is":0},
+          {"at":2,"field":"sound/ping","is":2},
+          {"at":2,"field":"sound/chime","is":1},
+          {"at":3,"field":"sound/ping","is":0}
+        ],"sample":[[2,"sound/missing"],[2,"sound/ping"]]}"#,
+    )
+    .unwrap();
+    let (_, report) = replay(project, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+    assert_eq!(report.assertions, 5);
+    assert_eq!(report.samples, [None, Some(Scalar::Number(2.))]);
+}
+
+#[test]
 fn movement_sweeps_multiple_cells_and_pressed_fires_once() {
     let project = Project::parse(
         r##"agge/1 {"start":"test","size":[80,64]}

@@ -26,9 +26,13 @@ pub fn options(size: [f32; 2]) -> eframe::NativeOptions {
 }
 
 pub fn run_player(file: PathBuf) -> Result<()> {
+    run_player_in_room(file, None)
+}
+
+pub fn run_player_in_room(file: PathBuf, room: Option<&str>) -> Result<()> {
     let store = Store::new(file);
     let project = store.load()?.project;
-    let play = Play::new(project, store.root().to_owned(), None)?;
+    let play = Play::new(project, store.root().to_owned(), room)?;
     let title = play.world.project().settings.title.clone();
     let dims = play
         .world

@@ -25,3 +25,5 @@ agge-studio examples/cinder/game.agge
 ```
 
 Use `agge init path/to/game.agge` to start a new project. Configure local agent tools with the [MCP guide](agents.md), or start from the [Studio tutorial](first-game.md).
+
+To preview a particular room without editing the launch room, pass its ID to the desktop player. For example, `agge-player --room clear examples/orbit/game.agge` opens Signal Runner's completion screen.

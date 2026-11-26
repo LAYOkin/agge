@@ -16,6 +16,8 @@ step:
 
 IDs match `[a-z][a-z0-9_]{0,47}`. Resource IDs are scoped by kind. Room placements have IDs unique within their room. The **Project** dialog edits the title, launch room, dimensions, tick rate, and seed. Custom keyboard actions use a header entry such as `"bindings":{"jump":["Space","J"]}`. Bindings override the defaults for the named action. The default actions are `left`, `right`, `up`, `down`, `fire`, `confirm`, and `cancel`. They map to arrows or WASD, Space or Z, Enter or X, and Escape or Backspace.
 
+In Studio, open **Project → Keyboard bindings**, enter an action ID, and choose **Add override**. Use **Add key** to assign one or more keys, then **Apply settings**. An override with no keys disables that action in native play. Remove a built-in action's override to restore its default keys.
+
 | Kind | Data |
 | --- | --- |
 | `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `maps`, `lights`, `darkness`, `ui` labels, `meters`, optional `music`, and `y_sort` |

@@ -92,6 +92,95 @@ struct RenameDraft {
     id: String,
     error: Option<String>,
 }
+struct SettingsDraft {
+    settings: Settings,
+    action: String,
+}
+
+impl SettingsDraft {
+    fn new(settings: &Settings) -> Self {
+        Self {
+            settings: settings.clone(),
+            action: String::new(),
+        }
+    }
+
+    fn bindings(&mut self, ui: &mut Ui) {
+        let bindings = &mut self.settings.bindings;
+        ui.collapsing("Keyboard bindings", |ui| {
+            ui.label("An override replaces the default keys. Remove it to restore the defaults.");
+            egui::ScrollArea::vertical()
+                .max_height(220.)
+                .show(ui, |ui| {
+                    bindings.retain(|action, keys| {
+                        ui.push_id(action, |ui| {
+                            let remove_action = ui
+                                .horizontal(|ui| {
+                                    ui.strong(action);
+                                    ui.button("Remove override").clicked()
+                                })
+                                .inner;
+                            if remove_action {
+                                return false;
+                            }
+                            let mut remove_key = None;
+                            for (index, key) in keys.iter_mut().enumerate() {
+                                ui.horizontal(|ui| {
+                                    egui::ComboBox::from_id_salt(index)
+                                        .selected_text(key.as_str())
+                                        .show_ui(ui, |ui| {
+                                            for choice in egui::Key::ALL {
+                                                ui.selectable_value(
+                                                    key,
+                                                    choice.name().into(),
+                                                    choice.name(),
+                                                );
+                                            }
+                                        });
+                                    if ui.small_button("Remove key").clicked() {
+                                        remove_key = Some(index);
+                                    }
+                                });
+                            }
+                            if let Some(index) = remove_key {
+                                keys.remove(index);
+                            }
+                            egui::ComboBox::from_id_salt("add_key")
+                                .selected_text("Add key")
+                                .show_ui(ui, |ui| {
+                                    for choice in egui::Key::ALL {
+                                        let name = choice.name();
+                                        if !keys.iter().any(|key| key.eq_ignore_ascii_case(name))
+                                            && ui.selectable_label(false, name).clicked()
+                                        {
+                                            keys.push(name.into());
+                                        }
+                                    }
+                                });
+                            ui.separator();
+                            true
+                        })
+                        .inner
+                    });
+                });
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.action)
+                        .hint_text("Action ID")
+                        .desired_width(130.),
+                );
+                let can_add = valid_id(&self.action) && !bindings.contains_key(&self.action);
+                if ui
+                    .add_enabled(can_add, egui::Button::new("Add override"))
+                    .on_disabled_hover_text("Enter a unique lowercase action ID.")
+                    .clicked()
+                {
+                    bindings.insert(std::mem::take(&mut self.action), Vec::new());
+                }
+            });
+        });
+    }
+}
 impl Draft {
     pub fn dirty(&self) -> bool {
         self.saved.as_ref() != Some(&self.raw)
@@ -117,7 +206,7 @@ pub struct Workbench {
     filter: String,
     create: Option<(Kind, String)>,
     rename: Option<RenameDraft>,
-    settings: Option<Settings>,
+    settings: Option<SettingsDraft>,
     inspect: bool,
     jump_line: Option<usize>,
     close_prompt: bool,
@@ -189,7 +278,7 @@ impl Workbench {
         let settings_dirty = self
             .settings
             .as_ref()
-            .is_some_and(|settings| settings != &self.loaded.project.settings);
+            .is_some_and(|draft| draft.settings != self.loaded.project.settings);
         if ctx.input(|input| input.viewport().close_requested()) && (self.dirty() || settings_dirty)
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -225,7 +314,7 @@ impl Workbench {
             return;
         }
         if reference == "project" {
-            self.settings = Some(self.loaded.project.settings.clone());
+            self.settings = Some(SettingsDraft::new(&self.loaded.project.settings));
             return;
         }
         let mut parts = reference.splitn(3, '/');
@@ -530,7 +619,7 @@ impl Workbench {
                     .add_enabled(!self.dirty(), egui::Button::new("Project"))
                     .clicked()
                 {
-                    self.settings = Some(self.loaded.project.settings.clone());
+                    self.settings = Some(SettingsDraft::new(&self.loaded.project.settings));
                 }
                 if ui.button("Reload").clicked() {
                     if self.dirty() {
@@ -595,8 +684,9 @@ impl Workbench {
         });
     }
     fn dialogs(&mut self, ctx: &Context) {
-        if let Some(mut settings) = self.settings.take() {
+        if let Some(mut draft) = self.settings.take() {
             let dialog = egui::Modal::new(egui::Id::new("project_settings")).show(ctx, |ui| {
+                let settings = &mut draft.settings;
                 ui.heading("Project settings");
                 ui.label("Title");
                 ui.text_edit_singleline(&mut settings.title);
@@ -631,6 +721,7 @@ impl Workbench {
                     ui.label("Seed");
                     ui.add(egui::DragValue::new(&mut settings.seed));
                 });
+                draft.bindings(ui);
                 ui.horizontal(|ui| {
                     let apply = ui.button("Apply settings").clicked();
                     let cancel = ui.button("Cancel").clicked();
@@ -641,7 +732,7 @@ impl Workbench {
             let (apply, cancel) = dialog.inner;
             if apply {
                 let result = self.store.update(Some(&self.loaded.revision), |project| {
-                    project.settings = settings.clone();
+                    project.settings = draft.settings.clone();
                     Ok(())
                 });
                 match result {
@@ -651,11 +742,11 @@ impl Workbench {
                     }
                     Err(error) => {
                         self.note(error.to_string(), true);
-                        self.settings = Some(settings);
+                        self.settings = Some(draft);
                     }
                 }
             } else if !cancel {
-                self.settings = Some(settings);
+                self.settings = Some(draft);
             }
         }
         if let Some((mut kind, mut id)) = self.create.take() {

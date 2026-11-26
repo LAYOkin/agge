@@ -112,30 +112,39 @@ object blue {"size":[8,8],"color":[20,70,210,255],"depth":1}
 fn room_overlay_reports_visible_solid_tiles_and_one_way_objects() {
     use agge_runtime::{Bounds, RoomCollider, room_colliders};
     let project = Project::parse(
-        r##"agge/1 {}
+        r##"agge/1 {"size":[32,16]}
 room main {"maps":["floor"],"instances":[["ledge","platform",12,4],["outside","block",80,4],["prop","scenery",4,4]]}
 tilemap floor {"cell":8,"at":[-4,0],"tiles":{"#":[[255,255,255,255],true],"+":[[255,255,255,255],false]},"rows":["#+"]}
-object platform {"size":[10,4],"one_way":true,"hidden":true}
+object platform {"size":[10,4],"one_way":true,"hidden":true,"script":"slide"}
 object block {"size":[8,8],"solid":true}
 object scenery {"size":[4,4]}
+script slide
+step:
+  move 2, 0
+---
 "##,
     )
     .unwrap();
     let spec = serde_json::from_str(r#"{"ticks":0}"#).unwrap();
-    let (world, _) = replay(project, &spec).unwrap();
+    let (mut world, _) = replay(project, &spec).unwrap();
+    let bounds = |collider| match collider {
+        RoomCollider::Solid(bounds) => (false, bounds.left, bounds.top, bounds.right),
+        RoomCollider::OneWay(bounds) => (true, bounds.left, bounds.top, bounds.right),
+    };
     let mut outlines = Vec::new();
     room_colliders(
         world.project(),
         world.room(),
         Bounds::new(0., 0., 30., 10.),
         |collider| {
-            outlines.push(match collider {
-                RoomCollider::Solid(bounds) => (false, bounds.left, bounds.top, bounds.right),
-                RoomCollider::OneWay(bounds) => (true, bounds.left, bounds.top, bounds.right),
-            });
+            outlines.push(bounds(collider));
         },
     );
     assert_eq!(outlines, [(false, -4., 0., 4.), (true, 12., 4., 22.)]);
+    world.tick(&Input::new()).unwrap();
+    outlines.clear();
+    world.visit_colliders(|collider| outlines.push(bounds(collider)));
+    assert_eq!(outlines, [(false, -4., 0., 4.), (true, 14., 4., 24.)]);
 }
 
 #[test]

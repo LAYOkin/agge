@@ -1,10 +1,12 @@
 use agge_core::{
     Color, Kind, Light, Project, Resource, Result, Tilemap, fail, read_asset, store::Store,
 };
-use agge_runtime::{Bounds, Draw, Input, Media, ReplayRecorder, World, draw_tilemap, shade_lights};
+use agge_runtime::{
+    Bounds, Draw, Input, Media, ReplayRecorder, RoomCollider, World, draw_tilemap, shade_lights,
+};
 use eframe::egui::{
-    self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, TextureHandle, TextureOptions, Ui,
-    Vec2,
+    self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, Stroke, StrokeKind, TextureHandle,
+    TextureOptions, Ui, Vec2,
 };
 use std::{
     collections::BTreeMap,
@@ -440,6 +442,10 @@ struct Lightmap {
 
 impl Canvas {
     pub fn play(&mut self, ui: &mut Ui, play: &Play) {
+        self.play_with_colliders(ui, play, false);
+    }
+
+    pub fn play_with_colliders(&mut self, ui: &mut Ui, play: &Play, show_colliders: bool) {
         let size = play.world.project().settings.size;
         let screen = fit(ui.available_rect_before_wrap(), size);
         let painter = ui.painter_at(screen);
@@ -460,6 +466,11 @@ impl Canvas {
         };
         play.world.draw_scene(play.world.view(), &mut draw);
         self.lighting(&painter, screen, &play.world);
+        if show_colliders {
+            play.world.visit_colliders(|collider| {
+                paint_collider(&painter, world_origin, scale, collider);
+            });
+        }
         let mut draw = |shape| {
             self.paint(
                 ui.ctx(),
@@ -696,6 +707,32 @@ impl Canvas {
                 screen,
                 Rect::from_min_max(uv(view.min), uv(view.max)),
                 Color32::WHITE,
+            );
+        }
+    }
+}
+
+pub fn paint_collider(painter: &Painter, origin: Pos2, scale: f32, collider: RoomCollider) {
+    let to_screen = |x, y| origin + Vec2::new(x, y) * scale;
+    match collider {
+        RoomCollider::Solid(bounds) => {
+            painter.rect_stroke(
+                Rect::from_min_max(
+                    to_screen(bounds.left, bounds.top),
+                    to_screen(bounds.right, bounds.bottom),
+                ),
+                0.,
+                Stroke::new(1.0_f32, Color32::from_rgb(255, 174, 101)),
+                StrokeKind::Inside,
+            );
+        }
+        RoomCollider::OneWay(bounds) => {
+            painter.line_segment(
+                [
+                    to_screen(bounds.left, bounds.top),
+                    to_screen(bounds.right, bounds.top),
+                ],
+                Stroke::new(2.0_f32, Color32::from_rgb(115, 229, 241)),
             );
         }
     }

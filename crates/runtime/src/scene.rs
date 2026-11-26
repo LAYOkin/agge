@@ -225,6 +225,16 @@ impl World {
     pub fn draw_ui<'a>(&'a self, draw: &mut impl FnMut(Draw<'a>)) {
         draw_hud(self.room(), Some(&self.globals), draw);
     }
+
+    /// Visit the current colliders in the runtime camera view.
+    pub fn visit_colliders(&self, mut visit: impl FnMut(RoomCollider)) {
+        let view = self.view();
+        tile_colliders(self.project(), self.room(), view, &mut visit);
+        for entity in self.entities.values() {
+            let object = self.object(&entity.object);
+            visit_object_collider(object, entity.bounds(object), view, &mut visit);
+        }
+    }
 }
 
 pub fn draw_hud<'a>(
@@ -318,6 +328,18 @@ pub fn room_colliders(
     view: Bounds,
     mut visit: impl FnMut(RoomCollider),
 ) {
+    tile_colliders(project, room, view, &mut visit);
+    for (_, object, bounds, _) in room_placements(project, room) {
+        visit_object_collider(object, bounds, view, &mut visit);
+    }
+}
+
+fn tile_colliders(
+    project: &Project,
+    room: &Room,
+    view: Bounds,
+    visit: &mut impl FnMut(RoomCollider),
+) {
     for id in &room.maps {
         if let Some(Resource::Tilemap(map)) = project.get(Kind::Tilemap, id) {
             visible_tiles(map, view, |bounds, tile| {
@@ -327,13 +349,19 @@ pub fn room_colliders(
             });
         }
     }
-    for (_, object, bounds, _) in room_placements(project, room) {
-        if bounds.overlaps(view) {
-            if object.solid {
-                visit(RoomCollider::Solid(bounds));
-            } else if object.one_way {
-                visit(RoomCollider::OneWay(bounds));
-            }
+}
+
+fn visit_object_collider(
+    object: &Object,
+    bounds: Bounds,
+    view: Bounds,
+    visit: &mut impl FnMut(RoomCollider),
+) {
+    if bounds.overlaps(view) {
+        if object.solid {
+            visit(RoomCollider::Solid(bounds));
+        } else if object.one_way {
+            visit(RoomCollider::OneWay(bounds));
         }
     }
 }

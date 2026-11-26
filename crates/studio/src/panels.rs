@@ -9,10 +9,8 @@ use agge_core::{
     AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Project, Resource, Room,
     Shape, Tilemap, WHITE,
 };
-use agge_runtime::{
-    Bounds, Draw, Media, RoomCollider, draw_hud, edit_scene, pick_placement, room_colliders,
-};
-use agge_studio::{color, fit};
+use agge_runtime::{Bounds, Draw, Media, draw_hud, edit_scene, pick_placement, room_colliders};
+use agge_studio::{color, fit, paint_collider};
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::time::{Duration, Instant};
 
@@ -728,35 +726,9 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
         );
     });
     if work.tool.show_colliders {
-        let to_screen = |x, y| area.min + Vec2::new(x, y) * scale;
-        room_colliders(
-            project,
-            room,
-            view.visible_bounds(),
-            |collider| match collider {
-                RoomCollider::Solid(bounds) => {
-                    let rect = Rect::from_min_max(
-                        to_screen(bounds.left, bounds.top),
-                        to_screen(bounds.right, bounds.bottom),
-                    );
-                    painter.rect_stroke(
-                        rect,
-                        0.,
-                        Stroke::new(1.0_f32, Color32::from_rgb(255, 174, 101)),
-                        StrokeKind::Inside,
-                    );
-                }
-                RoomCollider::OneWay(bounds) => {
-                    painter.line_segment(
-                        [
-                            to_screen(bounds.left, bounds.top),
-                            to_screen(bounds.right, bounds.top),
-                        ],
-                        Stroke::new(2.0_f32, Color32::from_rgb(115, 229, 241)),
-                    );
-                }
-            },
-        );
+        room_colliders(project, room, view.visible_bounds(), |collider| {
+            paint_collider(&painter, area.min, scale, collider);
+        });
     }
     let preview = room_camera::guide(&painter, project, room, area.min, scale, viewport, size);
     let clipped = painter.with_clip_rect(preview);

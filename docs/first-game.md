@@ -67,6 +67,8 @@ Choose **Restart** during a playtest to return to its starting room at tick 0 an
 
 Open **Runtime inspector** and choose **Copy state** to copy a JSON snapshot of the current tick. Pause first if you want the state to stay fixed while you inspect it.
 
+Turn on **Colliders** in the runtime inspector to see collision geometry follow moving entities and the playtest camera.
+
 For examples of collision gameplay, open `examples/switchback/game.agge` for grounded jumps and one-way platforms, or `examples/bankshot/game.agge` for a short arcade game built around `hit_x` and `hit_y`.
 
 Cinder Circuit demonstrates collision filters and scripted animations. Its `replay.json` defines four named scenarios in one suite, including a projectile crossing a force field that blocks the pilot.

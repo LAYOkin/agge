@@ -208,6 +208,7 @@ pub struct Workbench {
     rename: Option<RenameDraft>,
     settings: Option<SettingsDraft>,
     inspect: bool,
+    play_colliders: bool,
     jump_line: Option<usize>,
     close_prompt: bool,
 }
@@ -238,6 +239,7 @@ impl Workbench {
             rename: None,
             settings: None,
             inspect: false,
+            play_colliders: false,
             jump_line: None,
             close_prompt: false,
         };
@@ -933,6 +935,8 @@ impl Workbench {
                             state.entities.len(),
                             state.particles
                         ));
+                        ui.checkbox(&mut self.play_colliders, "Colliders")
+                            .on_hover_text("Show collision geometry in the current camera view.");
                         ui.separator();
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             for (key, value) in state.globals {
@@ -961,7 +965,13 @@ impl Workbench {
             }
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(Color32::BLACK))
-                .show(ctx, |ui| self.play_canvas.play(ui, play));
+                .show(ctx, |ui| {
+                    self.play_canvas.play_with_colliders(
+                        ui,
+                        play,
+                        self.inspect && self.play_colliders,
+                    );
+                });
             return;
         }
         egui::SidePanel::left("assets")

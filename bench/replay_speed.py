@@ -66,6 +66,25 @@ def collision_fixture(folder, ticks):
     return project, spec
 
 
+def tile_fixture(folder, ticks):
+    project = folder / "game.agge"
+    spec = folder / "replay.json"
+    placements, assertions, rows = [], [], []
+    for index in range(256):
+        hero = f"hero_{index}"
+        placements.append([hero, "hero", 8, index * 8])
+        assertions.append({"at": ticks, "field": f"entity/{hero}/x", "is": 58})
+        rows.append((".a" * 4) + "#" + (".a" * 27) + ".")
+    project.write_text('agge/1 {"start":"test"}\nroom test ' +
+                       json.dumps({"instances": placements, "maps": ["hall"]}) +
+                       '\nobject hero {"size":[6,6],"script":"drive"}' +
+                       '\nscript drive\nstep:\n  move 2, 0\n---\ntilemap hall ' +
+                       json.dumps({"cell":8,"rows":rows,"tiles":{
+                           "a":[[62,72,85,255]],"#":[[100,110,140,255],True]}}) + '\n', encoding="utf-8")
+    spec.write_text(json.dumps({"ticks": ticks, "expect": assertions}), encoding="utf-8")
+    return project, spec
+
+
 def sample(binary, project, replay):
     start = time.perf_counter()
     result = subprocess.run([binary, "test", project, f"@{replay}"],
@@ -80,19 +99,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", nargs="+", type=Path)
     parser.add_argument("--samples", default=7, type=int)
-    parser.add_argument("--case", choices=["small", "large", "collision"], action="append")
+    parser.add_argument("--case", choices=["small", "large", "collision", "tiles"], action="append")
     args = parser.parse_args()
     if not 3 <= args.samples <= 100:
         parser.error("use 3 to 100 samples")
 
     results = []
     with tempfile.TemporaryDirectory(prefix="agge-replay-timing-") as root:
-        cases = args.case or ["small", "large", "collision"]
+        cases = args.case or ["small", "large", "collision", "tiles"]
         for name in cases:
             if name == "collision":
                 ticks = 240
                 project, replay = collision_fixture(Path(root), ticks)
                 details = {"solids": 512, "movers": 256}
+            elif name == "tiles":
+                ticks = 480
+                project, replay = tile_fixture(Path(root), ticks)
+                details = {"cells": 64 * 256, "movers": 256}
             else:
                 ticks, spans = (3000, 30) if name == "small" else (60_000, 4096)
                 project, replay = fixture(Path(root), ticks, spans)

@@ -113,11 +113,18 @@ impl Store {
         write_atomic(&self.file, source.as_bytes(), false)
     }
     pub fn load(&self) -> Result<Loaded> {
+        Ok(self.load_if_changed(None)?.expect("no known revision"))
+    }
+    pub fn load_if_changed(&self, known: Option<&str>) -> Result<Option<Loaded>> {
         let source = self.source()?;
-        Ok(Loaded {
-            revision: revision(&source),
+        let revision = revision(&source);
+        if known == Some(revision.as_str()) {
+            return Ok(None);
+        }
+        Ok(Some(Loaded {
+            revision,
             project: Project::parse(&source)?,
-        })
+        }))
     }
     pub fn transact(&self, base: Option<&str>, ops: Vec<Edit>) -> Result<Receipt> {
         self.transact_checked(base, ops, false, |_| Ok(true))

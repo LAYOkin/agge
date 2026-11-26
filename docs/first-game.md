@@ -14,6 +14,8 @@
 
 Put PNG and WAV or OGG assets in folders beside the project. Create a **Sprite** or **Audio** resource with a relative path such as `art/pilot.png`. For sprite sheets, add one [x, y, width, height] rectangle per frame, then make an **Animation** that lists the frame indices in order. Link the object to the animation or directly to the sprite.
 
+The animation inspector supports loop, one-shot, and ping-pong playback. Use the frame slider to inspect individual frames. In the room inspector, **Music** selects a looping audio resource, and **HUD meters** binds bars to globals such as health or charge. **Sort actors by feet** enables top-down draw ordering within each object's draw depth.
+
 Expand **References** in the inspector to navigate between related resources. Incoming script references can jump to the call site, and room references can select a linked placement.
 
 With the tilemap editor, set the grid dimensions and cell size, create or select a palette character, and paint inside the canvas. Enable **Solid** for tiles that should block movement. Add the tilemap under the room's **Tilemap layers**. Use the room's lights, ambient darkness, and HUD label controls to finish the room.
@@ -48,6 +50,8 @@ That test uses the default rate of 60 ticks per second. It checks the same movem
 To capture a playtest in Studio, press **Play**, perform the sequence, and select **Copy replay** while the playtest is still open. You can pause before copying to hold the end tick. Paste the JSON into `movement.json` and add an `expect` array for the outcomes you want to preserve. The recording stores action spans and the starting room. It includes manual steps and stops recording at the replay size limits.
 
 For examples of collision gameplay, open `examples/switchback/game.agge` for grounded jumps and one-way platforms, or `examples/bankshot/game.agge` for a short arcade game built around `hit_x` and `hit_y`.
+
+Cinder Circuit demonstrates collision filters and scripted animations. Its `replay.json` defines four named scenarios in one suite, including a projectile crossing a force field that blocks the pilot.
 
 ## Package the game
 

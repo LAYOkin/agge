@@ -6,6 +6,55 @@ fn edit(json: serde_json::Value) -> Edit {
 }
 
 #[test]
+fn music_and_animation_renames_update_resources_and_typed_script_links() {
+    let mut project = Project::parse(
+        r#"agge/1 {}
+room main {"music":"theme"}
+audio theme {"file":"audio/music.wav"}
+sprite sheet {"file":"art/animation.png","frames":[[0,0,16,16],[16,0,16,16],[32,0,16,16]]}
+animation flash {"sprite":"sheet","frames":[0,1,2],"fps":12,"mode":"ping_pong"}
+object hero {"script":"drive","animation":"flash"}
+script drive
+step:
+  animate flash, pressed("fire")
+  if expired(shield)
+    sound theme
+  end
+---
+"#,
+    )
+    .unwrap();
+    for (kind, id, to) in [("audio", "theme", "music"), ("animation", "flash", "pulse")] {
+        edit(json!({"op":"rename","kind":kind,"id":id,"to":to}))
+            .apply(&mut project)
+            .unwrap();
+    }
+    let index = Index::build(&project);
+    index.require_valid().unwrap();
+    assert!(
+        index
+            .edges
+            .iter()
+            .any(|edge| edge.from == "room/main" && edge.to == "audio/music")
+    );
+    assert!(
+        index
+            .edges
+            .iter()
+            .any(|edge| edge.from == "script/drive" && edge.to == "animation/pulse")
+    );
+    assert!(index.programs["drive"].symbols.contains_key("timer/shield"));
+    let Some(Resource::Animation(clip)) = project.get(Kind::Animation, "pulse") else {
+        panic!("missing animation");
+    };
+    assert_eq!(
+        (0..7).map(|i| clip.slot(i).unwrap()).collect::<Vec<_>>(),
+        [0, 1, 2, 1, 0, 1, 2]
+    );
+    assert!(!clip.done(10_000));
+}
+
+#[test]
 fn oversized_edits_keep_the_original_project_readable() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path().join("test.agge"));

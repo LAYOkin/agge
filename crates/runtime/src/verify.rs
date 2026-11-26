@@ -1,4 +1,4 @@
-use crate::{Fault, Input, World};
+use crate::{CompiledGame, Fault, Input, World};
 use agge_core::{Project, Result, fail, valid_id};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -155,6 +155,10 @@ impl Report {
 }
 
 pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
+    replay_compiled(&CompiledGame::new(project)?, spec)
+}
+
+pub fn replay_compiled(game: &CompiledGame, spec: &Replay) -> Result<(World, Report)> {
     if spec.ticks > TICK_LIMIT
         || spec.input.len() > SPAN_LIMIT
         || spec.expect.len() > 4096
@@ -179,7 +183,7 @@ pub fn replay(project: Project, spec: &Replay) -> Result<(World, Report)> {
     if samples.iter().any(|(_, (tick, _))| *tick > spec.ticks) {
         return Err(fail("sample tick exceeds replay length"));
     }
-    let mut world = World::preview(project, spec.room.as_deref())?;
+    let mut world = game.preview(spec.room.as_deref())?;
     let mut report = Report {
         ticks: 0,
         assertions: 0,
@@ -258,10 +262,26 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
     let mut parts = field.split('/');
     let value = match (parts.next()?, parts.next(), parts.next(), parts.next()) {
         ("room", None, None, None) => return Some(Scalar::Text(world.room_id().into())),
+        ("music", None, None, None) => return Some(Scalar::Text(world.room().music.clone()?)),
         ("particles", None, None, None) => world.particles.len() as f32,
         ("count", Some(object), None, None) => world.count(object) as f32,
         ("grounded", Some(placement), None, None) => {
             u8::from(world.grounded(world.placed(placement)?)) as f32
+        }
+        ("animation", Some(placement), None, None) => {
+            return Some(Scalar::Text(
+                world.animation(world.placed(placement)?)?.0.into(),
+            ));
+        }
+        ("frame", Some(placement), None, None) => {
+            let (_, clip, elapsed) = world.animation(world.placed(placement)?)?;
+            clip.frames[clip.slot(elapsed)?] as f32
+        }
+        ("timer", Some(placement), Some(name), None) => {
+            world
+                .placed(placement)?
+                .timer(name, world.snapshot_tick())
+                .0 as f32
         }
         ("camera", Some("x"), None, None) => world.camera()[0],
         ("camera", Some("y"), None, None) => world.camera()[1],

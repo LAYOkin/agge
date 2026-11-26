@@ -1,0 +1,274 @@
+{
+  "cases": {
+    "win": {
+      "ticks": 223,
+      "input": [
+        [
+          1,
+          1,
+          "confirm"
+        ],
+        [
+          2,
+          2,
+          "fire"
+        ],
+        [
+          3,
+          34,
+          "down"
+        ],
+        [
+          35,
+          35,
+          "fire"
+        ],
+        [
+          36,
+          83,
+          "up"
+        ],
+        [
+          84,
+          84,
+          "fire"
+        ],
+        [
+          85,
+          222,
+          "right"
+        ],
+        [
+          223,
+          223,
+          "confirm"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 0,
+          "field": "room",
+          "is": "dock"
+        },
+        {
+          "at": 0,
+          "field": "music",
+          "is": "theme"
+        },
+        {
+          "at": 1,
+          "field": "room",
+          "is": "yard"
+        },
+        {
+          "at": 1,
+          "field": "global/hull",
+          "is": 3
+        },
+        {
+          "at": 2,
+          "field": "animation/pilot",
+          "is": "shoot"
+        },
+        {
+          "at": 2,
+          "field": "frame/pilot",
+          "is": 2
+        },
+        {
+          "at": 6,
+          "field": "frame/pilot",
+          "is": 3
+        },
+        {
+          "at": 6,
+          "field": "timer/pilot/shot",
+          "is": 12
+        },
+        {
+          "at": 14,
+          "field": "animation/pilot",
+          "is": "idle"
+        },
+        {
+          "at": 25,
+          "field": "animation/center",
+          "is": "active"
+        },
+        {
+          "at": 25,
+          "field": "global/relays",
+          "is": 1
+        },
+        {
+          "at": 80,
+          "field": "global/relays",
+          "is": 2
+        },
+        {
+          "at": 134,
+          "field": "global/relays",
+          "is": 3
+        },
+        {
+          "at": 215,
+          "field": "room",
+          "is": "clear"
+        },
+        {
+          "at": 215,
+          "field": "music",
+          "is": "theme"
+        },
+        {
+          "at": 223,
+          "field": "room",
+          "is": "yard"
+        },
+        {
+          "at": 223,
+          "field": "global/relays",
+          "is": 0
+        }
+      ]
+    },
+    "loss": {
+      "ticks": 226,
+      "input": [
+        [
+          1,
+          1,
+          "confirm"
+        ],
+        [
+          226,
+          226,
+          "confirm"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 39,
+          "field": "count/bolt",
+          "is": 1
+        },
+        {
+          "at": 110,
+          "field": "global/hull",
+          "is": 3
+        },
+        {
+          "at": 115,
+          "field": "global/hull",
+          "is": 2
+        },
+        {
+          "at": 115,
+          "field": "timer/pilot/shield",
+          "is": 26
+        },
+        {
+          "at": 170,
+          "field": "global/hull",
+          "is": 1
+        },
+        {
+          "at": 225,
+          "field": "room",
+          "is": "lost"
+        },
+        {
+          "at": 225,
+          "field": "global/hull",
+          "is": 0
+        },
+        {
+          "at": 226,
+          "field": "room",
+          "is": "yard"
+        },
+        {
+          "at": 226,
+          "field": "global/hull",
+          "is": 3
+        }
+      ]
+    },
+    "cooldown": {
+      "ticks": 25,
+      "room": "yard",
+      "input": [
+        [
+          1,
+          25,
+          "fire"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 1,
+          "field": "count/pulse",
+          "is": 1
+        },
+        {
+          "at": 1,
+          "field": "timer/pilot/shot",
+          "is": 16
+        },
+        {
+          "at": 12,
+          "field": "count/pulse",
+          "is": 1
+        },
+        {
+          "at": 16,
+          "field": "timer/pilot/shot",
+          "is": 1
+        },
+        {
+          "at": 17,
+          "field": "count/pulse",
+          "is": 2
+        },
+        {
+          "at": 17,
+          "field": "frame/pilot",
+          "is": 2
+        },
+        {
+          "at": 25,
+          "field": "timer/pilot/shot",
+          "is": 8
+        }
+      ]
+    },
+    "filter": {
+      "room": "yard",
+      "ticks": 55,
+      "input": [
+        [
+          1,
+          55,
+          "right"
+        ],
+        [
+          1,
+          1,
+          "fire"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 55,
+          "field": "entity/pilot/x",
+          "is": 76
+        },
+        {
+          "at": 25,
+          "field": "global/relays",
+          "is": 1
+        }
+      ]
+    }
+  }
+}

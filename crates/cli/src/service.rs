@@ -3,10 +3,10 @@ use agge_core::{
     script::{self, Event},
     store::{Loaded, Store},
 };
-use agge_runtime::{Media, Replay, capture, replay};
+use agge_runtime::{CompiledGame, Media, Replay, asset_info, capture, replay, replay_compiled};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::cell::OnceCell;
+use std::{cell::OnceCell, collections::BTreeMap};
 
 pub fn check(store: &Store) -> Result<(Value, bool)> {
     let loaded = store.load()?;
@@ -28,6 +28,7 @@ pub fn check(store: &Store) -> Result<(Value, bool)> {
 #[serde(deny_unknown_fields)]
 struct Query {
     get: Option<String>,
+    asset: Option<String>,
     schema: Option<String>,
     path: Option<String>,
     lines: Option<[usize; 2]>,
@@ -55,13 +56,39 @@ fn default_limit() -> usize {
     64
 }
 
+#[derive(Default)]
+pub struct QueryCache {
+    snapshot: Option<(Loaded, OnceCell<Index>)>,
+}
+
+impl QueryCache {
+    fn snapshot(&mut self, store: &Store) -> Result<(&Loaded, &OnceCell<Index>)> {
+        let known = self
+            .snapshot
+            .as_ref()
+            .map(|(loaded, _)| loaded.revision.as_str());
+        if let Some(loaded) = store.load_if_changed(known)? {
+            self.snapshot = Some((loaded, OnceCell::new()));
+        }
+        let (loaded, index) = self
+            .snapshot
+            .as_ref()
+            .expect("first load always returns a snapshot");
+        Ok((loaded, index))
+    }
+}
+
 pub fn query(store: &Store, args: Value) -> Result<Value> {
+    query_with_cache(store, args, &mut QueryCache::default())
+}
+
+pub fn query_with_cache(store: &Store, args: Value, cache: &mut QueryCache) -> Result<Value> {
     if args.get("read").is_some() {
         let batch: Reads = serde_json::from_value(args)?;
         if !(1..=16).contains(&batch.read.len()) {
             return Err(fail("read must contain 1–16 queries"));
         }
-        let loaded = store.load()?;
+        let (loaded, index) = cache.snapshot(store)?;
         if let Some(base) = batch.base.as_deref()
             && base != loaded.revision
         {
@@ -70,11 +97,10 @@ pub fn query(store: &Store, args: Value) -> Result<Value> {
                 loaded.revision
             )));
         }
-        let index = OnceCell::new();
         let mut data = Vec::with_capacity(batch.read.len());
         let mut bytes = 0;
         for args in batch.read {
-            let value = match query_data(args, &loaded, &index) {
+            let value = match query_data(args, loaded, index) {
                 Ok(value) => value,
                 Err(error) => json!({"error":error.to_string()}),
             };
@@ -91,14 +117,17 @@ pub fn query(store: &Store, args: Value) -> Result<Value> {
     if let Some(schema) = args.schema {
         return guide(&schema);
     }
+    if let Some(file) = args.asset {
+        return Ok(json!({"asset":file,"data":asset_info(store.root(), &file)?}));
+    }
     if let Some(session) = args.session {
         if args.offset > 0 {
             return Err(fail("session delta must be queried by itself"));
         }
         return Ok(json!(store.delta(&session, args.advance)?));
     }
-    let loaded = store.load()?;
-    let mut result = query_data(args, &loaded, &OnceCell::new())?;
+    let (loaded, index) = cache.snapshot(store)?;
+    let mut result = query_data(args, loaded, index)?;
     result["revision"] = json!(loaded.revision);
     Ok(result)
 }
@@ -108,6 +137,7 @@ impl Query {
         let args = self;
         let modes = [
             &args.get,
+            &args.asset,
             &args.refs,
             &args.outline,
             &args.prefix,
@@ -135,9 +165,9 @@ impl Query {
 
 fn query_data(args: Query, loaded: &Loaded, index: &OnceCell<Index>) -> Result<Value> {
     args.validate()?;
-    if args.session.is_some() || args.schema.is_some() {
+    if args.session.is_some() || args.schema.is_some() || args.asset.is_some() {
         return Err(fail(
-            "schema and session queries must be requested separately",
+            "schema, asset and session queries must be requested separately",
         ));
     }
     let mut result = json!({});
@@ -332,8 +362,12 @@ pub fn edit(store: &Store, args: Value) -> Result<(Value, bool)> {
     let mut reports = Vec::new();
     let (receipt, passed) =
         store.transact_checked(batch.base.as_deref(), batch.ops, batch.preview, |project| {
+            if batch.verify.is_empty() {
+                return Ok(true);
+            }
+            let game = CompiledGame::new(project.clone())?;
             for spec in &batch.verify {
-                let (_, report) = replay(project.clone(), spec)?;
+                let (_, report) = replay_compiled(&game, spec)?;
                 let passed = report.passed();
                 reports.push(report);
                 if !passed {
@@ -381,7 +415,81 @@ struct Selection {
 }
 pub type Simulation = (Value, bool, Option<Vec<u8>>);
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Suite {
+    base: Option<String>,
+    #[serde(default)]
+    detail: bool,
+    cases: BTreeMap<String, Replay>,
+}
+
+fn run_suite(store: &Store, args: Value) -> Result<Simulation> {
+    let suite: Suite = serde_json::from_value(args)?;
+    if !(1..=32).contains(&suite.cases.len())
+        || suite.cases.keys().any(|name| !agge_core::valid_id(name))
+        || suite
+            .cases
+            .values()
+            .map(|case| u64::from(case.ticks))
+            .sum::<u64>()
+            > 120_000
+    {
+        return Err(fail(
+            "suite requires 1–32 named cases and at most 120000 total ticks",
+        ));
+    }
+    let loaded = store.load()?;
+    if let Some(base) = suite.base.as_deref()
+        && base != loaded.revision
+    {
+        return Err(fail(format!(
+            "stale revision; current is {}",
+            loaded.revision
+        )));
+    }
+    let game = CompiledGame::new(loaded.project)?;
+    let cases = suite.cases.len();
+    let (mut assertions, mut ticks, mut failed) = (0, 0, 0);
+    let mut reports = BTreeMap::new();
+    for (name, case) in suite.cases {
+        match replay_compiled(&game, &case) {
+            Ok((_, mut report)) => {
+                assertions += report.assertions;
+                ticks += report.ticks;
+                let passed = report.passed();
+                failed += usize::from(!passed);
+                if suite.detail || !passed {
+                    let omitted = report.failures.len().saturating_sub(8);
+                    report.failures.truncate(8);
+                    if !suite.detail {
+                        report.samples.clear();
+                    }
+                    let mut result = json!(report);
+                    if omitted != 0 {
+                        result["omitted_failures"] = json!(omitted);
+                    }
+                    reports.insert(name, result);
+                }
+            }
+            Err(error) => {
+                failed += 1;
+                reports.insert(name, json!({"error": error.to_string()}));
+            }
+        }
+    }
+    let passed = failed == 0;
+    let mut result = json!({"revision":loaded.revision,"passed":passed,"cases":cases,"failed":failed,"assertions":assertions,"ticks":ticks});
+    if !reports.is_empty() {
+        result["reports"] = json!(reports);
+    }
+    Ok((result, passed, None))
+}
+
 pub fn simulate(store: &Store, mut args: Value, test_only: bool) -> Result<Simulation> {
+    if args.get("cases").is_some() {
+        return run_suite(store, args);
+    }
     let fields = args
         .as_object_mut()
         .ok_or_else(|| fail("expected replay object"))?;
@@ -438,20 +546,21 @@ fn guide(key: &str) -> Result<Value> {
             {"op":"grid","room":"main","object":"player","prefix":"row","at":[0,0],"step":[32,32],"size":[5,2]},
             {"op":"camera","room":"main","size":[1280,720],"follow":"hero","dead":[80,40],"smooth":12},
             {"op":"slice","id":"terrain","cell":[16,16],"grid":[4,2]},
+            {"op":"clip","id":"pulse","sprite":"ship","first":4,"count":6,"fps":16,"mode":"once"},
             {"op":"atlas","map":"layout","sprite":"terrain","keys":"abcd","solid":"ab"},
             {"op":"fill","map":"layout","area":[0,0,8,8],"tile":"#","border":true},
             {"op":"stamp","map":"layout","at":[1,1],"rows":[".#","#."]}
         ]),
         "room" => {
-            json!({"bg":[24,30,42,255],"instances":[["hero","player",32,48]],"size":[1280,720],"camera":{"follow":"hero","dead":[80,40],"smooth":12},"maps":["layout"],"lights":[{"at":[64,64],"radius":60,"color":[90,180,240,255]}],"darkness":0.3,"ui":[{"at":[8,8],"text":"Score ","value":"score"}]})
+            json!({"bg":[24,30,42,255],"instances":[["hero","player",32,48]],"size":[1280,720],"camera":{"follow":"hero","dead":[80,40],"smooth":12},"maps":["layout"],"lights":[{"at":[64,64],"radius":60,"color":[90,180,240,255]}],"darkness":0.3,"music":"theme","y_sort":true,"meters":[{"at":[8,24],"size":[80,8],"value":"health","max":100}],"ui":[{"at":[8,8],"text":"Score ","value":"score"}]})
         }
         "object" => {
-            json!({"size":[24,24],"color":[255,255,255,255],"shape":"rect","sprite":"ship","script":"drive","solid":false,"one_way":false,"hidden":false,"gravity":0})
+            json!({"size":[24,24],"color":[255,255,255,255],"shape":"rect","sprite":"ship","script":"drive","solid":false,"one_way":false,"hidden":false,"gravity":0,"depth":0})
         }
         "sprite" => json!({"file":"art/ship.png","frames":[[0,0,16,16]]}),
-        "animation" => json!({"sprite":"ship","frames":[0,1],"fps":10}),
+        "animation" => json!({"sprite":"ship","frames":[0,1],"fps":10,"mode":"ping_pong"}),
         "script" => {
-            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","touch(\"object\")","global(name)","grounded()","blocked(dx,dy)","impact()","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
+            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","touch(\"object\")","global(name)","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
         }
         "tilemap" => {
             json!({"cell":16,"at":[0,0],"atlas":"terrain","tiles":{"#":[[120,140,160,255],true],"a":[0],"b":[1,true]},"rows":["###","#a#","b##"]})
@@ -461,7 +570,10 @@ fn guide(key: &str) -> Result<Value> {
             json!({"count":12,"life":30,"speed":120,"radius":2,"color":[230,200,110,255],"gravity":80})
         }
         "replay" => {
-            json!({"ticks":20,"input":[[1,5,"right"]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"fields":["room","particles","camera/x","camera/y","grounded/placement","count/object","global/name","entity/placement/property"]})
+            json!({"ticks":20,"input":[[1,5,"right"]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"fields":["room","particles","camera/x","camera/y","grounded/placement","animation/placement","frame/placement","timer/placement/name","music","count/object","global/name","entity/placement/property"]})
+        }
+        "suite" => {
+            json!({"cases":{"arrival":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}},"detail":false})
         }
         "project" => json!(agge_core::Settings::default()),
         _ => {

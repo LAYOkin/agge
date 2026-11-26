@@ -84,6 +84,15 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
         json!({"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"agge_run","arguments":{
             "ticks":0,"sample":{"at":[0],"fields":["grounded/hero","entity/hero/x"]}
         }}}),
+        json!({"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"agge_run","arguments":{
+            "cases":{"starts":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]},
+                "missing":{"room":"absent","ticks":0}}
+        }}}),
+        json!({"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"agge_edit","arguments":{"ops":[
+            {"op":"rename","kind":"sprite","id":"terrain","to":"ground"}
+        ]}}}),
+        json!({"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"agge_query","arguments":{"refs":"sprite/ground"}}}),
+        json!({"jsonrpc":"2.0","id":29,"method":"tools/call","params":{"name":"agge_query","arguments":{"refs":"sprite/terrain"}}}),
     ];
     {
         let mut input = child.stdin.take().unwrap();
@@ -98,7 +107,7 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(responses.len(), 25);
+    assert_eq!(responses.len(), 29);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
     assert_eq!(responses[1]["result"]["tools"].as_array().unwrap().len(), 6);
     assert_eq!(responses[2]["result"]["isError"], false);
@@ -171,6 +180,24 @@ fn mcp_discovers_tools_edits_and_returns_cropped_image() {
     assert_eq!(data(24)["data"][0]["data"][2], 10.0);
     assert_eq!(data(24)["data"][1]["data"][1], "ledge");
     assert_eq!(data(25)["report"]["samples"], json!([1.0, 10.0]));
+    let suite = &responses[25]["result"];
+    assert_eq!(suite["isError"], true);
+    let summary: Value =
+        serde_json::from_str(suite["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(summary["assertions"], 1);
+    assert_eq!(
+        summary["reports"],
+        json!({"missing":{"error":"absent room/absent"}})
+    );
+    assert_eq!(data(27)["revision"], data(28)["revision"]);
+    assert!(
+        data(28)["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|edge| edge["from"] == "tilemap/floor")
+    );
+    assert_eq!(data(29)["items"], json!([]));
 }
 
 #[test]
@@ -227,4 +254,41 @@ fn cli_batches_reads_and_leaves_failed_or_previewed_edits_uncommitted() {
     assert!(batch["data"][2]["items"].is_array());
     assert!(run("undo", None).status.success());
     assert_eq!(std::fs::read(&file).unwrap(), original);
+}
+
+#[test]
+fn asset_queries_inspect_relative_media_without_returning_binary_data() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("game.agge");
+    let binary = env!("CARGO_BIN_EXE_agge");
+    assert!(
+        Command::new(binary)
+            .args(["init"])
+            .arg(&file)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.path().join("sheet.png"),
+        include_bytes!("../../../examples/cinder/art/cinder.png"),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("invalid.wav"), b"RIFF\x04\x00\x00\x00WAVE").unwrap();
+    let get = |asset| {
+        Command::new(binary)
+            .arg("query")
+            .arg(&file)
+            .arg(json!({"asset":asset}).to_string())
+            .output()
+            .unwrap()
+    };
+    let image = get("sheet.png");
+    assert!(image.status.success());
+    let metadata: Value = serde_json::from_slice(&image.stdout).unwrap();
+    assert_eq!(metadata["data"]["size"], json!([160, 16]));
+    assert_eq!(metadata["data"]["type"], "image");
+    assert!(!get("invalid.wav").status.success());
+    assert!(!get("../sheet.png").status.success());
 }

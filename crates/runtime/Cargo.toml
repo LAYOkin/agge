@@ -9,6 +9,7 @@ license.workspace = true
 agge-core.workspace = true
 serde.workspace = true
 image.workspace = true
+symphonia = { version = "0.5", default-features = false, features = ["ogg", "vorbis", "wav", "pcm"] }
 
 font8x8 = "0.3"
 

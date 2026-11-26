@@ -166,6 +166,23 @@ impl Index {
                     for (i, map) in room.maps.iter().enumerate() {
                         index.link(&key, Kind::Tilemap, map, &format!("maps/{i}"));
                     }
+                    if let Some(music) = &room.music {
+                        index.link(&key, Kind::Audio, music, "music");
+                    }
+                    for (i, meter) in room.meters.iter().enumerate() {
+                        if !meter.at.into_iter().all(coord)
+                            || !meter.size.into_iter().all(|v| (0.01..=4096.).contains(&v))
+                            || !(0. ..=1_000_000.).contains(&meter.max)
+                            || meter.max == 0.
+                            || !valid_id(&meter.value)
+                        {
+                            index.error(
+                                "hud_meter",
+                                &format!("{key}/meters/{i}"),
+                                "invalid meter position, size, maximum or global",
+                            );
+                        }
+                    }
                     if !(0. ..=1.).contains(&room.darkness)
                         || room.lights.iter().any(|light| {
                             !light.at.into_iter().all(coord)
@@ -449,6 +466,16 @@ pub enum Edit {
         #[serde(default)]
         gap: [u32; 2],
     },
+    Clip {
+        id: String,
+        sprite: String,
+        #[serde(default)]
+        first: usize,
+        count: usize,
+        fps: u32,
+        #[serde(default)]
+        mode: crate::AnimationMode,
+    },
     Atlas {
         map: String,
         sprite: String,
@@ -630,6 +657,28 @@ impl Edit {
                 }
                 .frames()?;
             }
+            Self::Clip {
+                id,
+                sprite,
+                first,
+                count,
+                fps,
+                mode,
+            } => {
+                let end = first
+                    .checked_add(count)
+                    .filter(|_| (1..=4096).contains(&count))
+                    .ok_or_else(|| fail("clip requires 1–4096 consecutive frames"))?;
+                project.put(
+                    id,
+                    Resource::Animation(crate::Animation {
+                        sprite,
+                        frames: (first..end).collect(),
+                        fps,
+                        mode,
+                    }),
+                );
+            }
             Self::Atlas {
                 map,
                 sprite,
@@ -760,6 +809,11 @@ fn rename(project: &mut Project, kind: Kind, id: &str, to: &str) -> Result<()> {
                 room.instances.iter_mut().for_each(|i| replace(&mut i.1))
             }
             Resource::Room(room) if kind == Kind::Tilemap => room.maps.iter_mut().for_each(replace),
+            Resource::Room(room) if kind == Kind::Audio => {
+                if let Some(music) = &mut room.music {
+                    replace(music);
+                }
+            }
             Resource::Object(object) => {
                 let target = match kind {
                     Kind::Animation => &mut object.animation,

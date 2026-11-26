@@ -1,8 +1,11 @@
 mod camera;
 mod solids;
+mod tiles;
 mod vm;
 
-use agge_core::{Index, Kind, Object, Project, Resource, Result, Room, fail, script::Event};
+use agge_core::{
+    Animation, Index, Kind, Object, Project, Resource, Result, Room, fail, script::Event,
+};
 use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -90,14 +93,37 @@ pub struct Entity {
     pub vy: f32,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub vars: BTreeMap<String, f32>,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    effects: Option<Box<ActorEffects>>,
     #[serde(skip)]
     pub born: u64,
     #[serde(skip)]
     dead: bool,
 }
+
+#[derive(Clone, Debug, Default, Serialize)]
+struct ActorEffects {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    animation: Option<String>,
+    #[serde(skip)]
+    animation_since: u64,
+    #[serde(skip)]
+    timers: BTreeMap<String, u64>,
+}
+
 impl Entity {
     pub fn bounds(&self, object: &Object) -> Bounds {
         Bounds::new(self.x, self.y, object.size[0], object.size[1])
+    }
+    pub fn timer(&self, name: &str, tick: u64) -> (u64, bool) {
+        self.effects
+            .as_ref()
+            .and_then(|effects| effects.timers.get(name))
+            .map_or((0, false), |&due| (due.saturating_sub(tick), due == tick))
+    }
+    fn active_animation(&self) -> Option<(&str, u64)> {
+        let effects = self.effects.as_ref()?;
+        Some((effects.animation.as_deref()?, effects.animation_since))
     }
 }
 #[derive(Clone, Debug)]
@@ -188,14 +214,68 @@ impl std::fmt::Display for Fault {
 }
 impl std::error::Error for Fault {}
 
+pub struct CompiledGame {
+    project: Arc<Project>,
+    index: Arc<Index>,
+    objects: Arc<BTreeMap<String, Object>>,
+    animations: Arc<BTreeMap<String, Animation>>,
+    collision_tiles: Arc<BTreeMap<String, Arc<tiles::CollisionTiles>>>,
+    has_depth: bool,
+}
+
+impl CompiledGame {
+    pub fn new(project: Project) -> Result<Self> {
+        let index = Index::build(&project);
+        index.require_valid()?;
+        let mut objects = BTreeMap::new();
+        let mut animations = BTreeMap::new();
+        let mut collision_tiles = BTreeMap::new();
+        for ((_, id), resource) in &project.resources {
+            match resource {
+                Resource::Object(object) => {
+                    objects.insert(id.clone(), object.clone());
+                }
+                Resource::Animation(animation) => {
+                    animations.insert(id.clone(), animation.clone());
+                }
+                Resource::Tilemap(map) => {
+                    if let Some(tiles) = tiles::CollisionTiles::compile(map) {
+                        collision_tiles.insert(id.clone(), Arc::new(tiles));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(Self {
+            project: Arc::new(project),
+            index: Arc::new(index),
+            has_depth: objects.values().any(|object| object.depth != 0),
+            objects: Arc::new(objects),
+            animations: Arc::new(animations),
+            collision_tiles: Arc::new(collision_tiles),
+        })
+    }
+
+    pub fn preview(&self, room: Option<&str>) -> Result<World> {
+        let mut world = World::prepare(self, room)?;
+        world.fault = world.enter_room().err();
+        Ok(world)
+    }
+}
+
 pub struct World {
-    pub(crate) project: Project,
+    pub(crate) project: Arc<Project>,
     index: Arc<Index>,
     room: String,
     tick: u64,
     next_id: u64,
     pub(crate) entities: BTreeMap<u64, Entity>,
-    objects: BTreeMap<String, Object>,
+    objects: Arc<BTreeMap<String, Object>>,
+    animations: Arc<BTreeMap<String, Animation>>,
+    collision_tiles: Arc<BTreeMap<String, Arc<tiles::CollisionTiles>>>,
+    pub(crate) has_depth: bool,
+    step_ids: Vec<u64>,
+    room_tiles: Vec<Arc<tiles::CollisionTiles>>,
     members: BTreeMap<String, BTreeSet<u64>>,
     placements: BTreeMap<String, u64>,
     camera: camera::ViewCamera,
@@ -223,42 +303,33 @@ impl World {
 
     /// Construct a world for inspection, retaining the partial state if a create event fails.
     pub fn preview(project: Project, room: Option<&str>) -> Result<Self> {
-        let mut world = Self::prepare(project, room)?;
-        world.fault = world.enter_room().err();
-        Ok(world)
+        CompiledGame::new(project)?.preview(room)
     }
 
     pub fn fault(&self) -> Option<&Fault> {
         self.fault.as_ref()
     }
 
-    fn prepare(project: Project, room: Option<&str>) -> Result<Self> {
-        let index = Index::build(&project);
-        index.require_valid()?;
+    fn prepare(game: &CompiledGame, room: Option<&str>) -> Result<Self> {
+        let project = &game.project;
         let room = room.unwrap_or(&project.settings.start).to_owned();
         if project.get(Kind::Room, &room).is_none() {
             return Err(fail(format!("absent room/{room}")));
         }
         let seed = project.settings.seed;
-        let objects = project
-            .resources
-            .iter()
-            .filter_map(|((_, id), resource)| {
-                if let Resource::Object(object) = resource {
-                    Some((id.clone(), object.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
         Ok(Self {
-            project,
-            index: Arc::new(index),
+            project: Arc::clone(project),
+            index: Arc::clone(&game.index),
             room,
             tick: 0,
             next_id: 1,
             entities: BTreeMap::new(),
-            objects,
+            objects: Arc::clone(&game.objects),
+            animations: Arc::clone(&game.animations),
+            has_depth: game.has_depth,
+            step_ids: Vec::new(),
+            collision_tiles: Arc::clone(&game.collision_tiles),
+            room_tiles: Vec::new(),
             members: BTreeMap::new(),
             placements: BTreeMap::new(),
             camera: camera::ViewCamera::default(),
@@ -336,6 +407,21 @@ impl World {
     pub(crate) fn object(&self, name: &str) -> &Object {
         &self.objects[name]
     }
+    pub fn animation<'a>(&'a self, entity: &'a Entity) -> Option<(&'a str, &'a Animation, u64)> {
+        let (id, since) = match entity.active_animation() {
+            Some(active) => active,
+            None => (
+                self.object(&entity.object).animation.as_deref()?,
+                entity.born,
+            ),
+        };
+        let clip = self.animations.get(id)?;
+        Some((
+            id,
+            clip,
+            clip.elapsed_frames(self.tick - since, self.project.settings.hz),
+        ))
+    }
     pub fn tick(&mut self, input: &Input) -> std::result::Result<(), Fault> {
         if let Some(fault) = &self.fault {
             return Err(fault.clone());
@@ -363,13 +449,18 @@ impl World {
         self.particles.retain(|spark| {
             matches!(self.project.get(Kind::Particle, &spark.style), Some(Resource::Particle(style)) if spark.age < style.life)
         });
-        let ids = self.entities.keys().copied().collect::<Vec<_>>();
+        let mut ids = std::mem::take(&mut self.step_ids);
+        ids.clear();
+        ids.extend(self.entities.keys().copied());
         let index = self.index.clone();
-        for id in ids {
+        for &id in &ids {
             let mut entity = self
                 .entities
                 .remove(&id)
                 .expect("only current entity is removed");
+            if let Some(effects) = &mut entity.effects {
+                effects.timers.retain(|_, due| *due >= self.tick);
+            }
             if let Err(fault) = self.run(&index, &mut entity, Event::Step, 0.) {
                 self.keep_entity(entity);
                 return Err(fault);
@@ -402,6 +493,7 @@ impl World {
                 self.keep_entity(entity);
             }
         }
+        self.step_ids = ids;
         self.spawn_queued()?;
         if let Some(room) = self.next_room.take() {
             self.room = room;
@@ -414,6 +506,12 @@ impl World {
     }
     fn enter_room(&mut self) -> std::result::Result<(), Fault> {
         self.camera = camera::ViewCamera::new(self.room(), self.project.settings.size);
+        self.room_tiles = self
+            .room()
+            .maps
+            .iter()
+            .filter_map(|id| self.collision_tiles.get(id).cloned())
+            .collect();
         self.entities.clear();
         self.members.clear();
         self.placements.clear();
@@ -468,6 +566,7 @@ impl World {
                     vx: 0.,
                     vy: 0.,
                     vars: BTreeMap::new(),
+                    effects: None,
                     born: self.tick,
                     dead: false,
                 });
@@ -489,7 +588,7 @@ impl World {
     }
     fn keep_entity(&mut self, entity: Entity) {
         let object = self.object(&entity.object);
-        if object.solid || object.one_way {
+        if object.layer != 0 && (object.solid || object.one_way) {
             self.solids.update(entity.id, entity.bounds(object));
         }
         self.entities.insert(entity.id, entity);
@@ -510,20 +609,20 @@ impl World {
 
     fn blocked(&self, entity: &Entity, x: f32, y: f32) -> bool {
         let object = self.object(&entity.object);
-        if x != 0. && self.sweep(entity.id, entity.bounds(object), 0, x) != x {
+        if x != 0. && self.sweep(entity.id, object.mask, entity.bounds(object), 0, x) != x {
             return true;
         }
         let horizontal = (entity.x + x).clamp(-1_000_000., 1_000_000.);
         let bounds = Bounds::new(horizontal, entity.y, object.size[0], object.size[1]);
-        y != 0. && self.sweep(entity.id, bounds, 1, y) != y
+        y != 0. && self.sweep(entity.id, object.mask, bounds, 1, y) != y
     }
 
     fn motion(&self, entity: &mut Entity, axis: usize, delta: f32) -> bool {
         if delta == 0. {
             return false;
         }
-        let bounds = entity.bounds(self.object(&entity.object));
-        let moved = self.sweep(entity.id, bounds, axis, delta);
+        let object = self.object(&entity.object);
+        let moved = self.sweep(entity.id, object.mask, entity.bounds(object), axis, delta);
         let position = if axis == 0 {
             &mut entity.x
         } else {
@@ -533,7 +632,10 @@ impl World {
         moved != delta
     }
 
-    fn sweep(&self, mover: u64, bounds: Bounds, axis: usize, delta: f32) -> f32 {
+    fn sweep(&self, mover: u64, mask: u16, bounds: Bounds, axis: usize, delta: f32) -> f32 {
+        if mask == 0 {
+            return delta;
+        }
         let swept = bounds.swept(axis, delta);
         let mut move_by = delta;
         self.solids.visit(swept, |id| {
@@ -541,40 +643,14 @@ impl World {
                 && let Some(other) = self.entities.get(&id)
             {
                 let object = self.object(&other.object);
-                if !object.one_way || (axis == 1 && delta > 0.) {
+                if mask & object.layer != 0 && (!object.one_way || (axis == 1 && delta > 0.)) {
                     move_by = bounds.clamp_motion(other.bounds(object), axis, move_by);
                 }
             }
         });
-        for map in &self.room().maps {
-            let Some(Resource::Tilemap(map)) = self.project.get(Kind::Tilemap, map) else {
-                unreachable!()
-            };
-            let cell = map.cell as f32;
-            let column = |x: f32| ((x - map.at[0] as f32) / cell).floor().max(0.) as usize;
-            let row = |y: f32| ((y - map.at[1] as f32) / cell).floor().max(0.) as usize;
-            for y in row(swept.top)..=row(swept.bottom).min(map.rows.len().saturating_sub(1)) {
-                let tiles = map.rows[y].as_bytes();
-                for (x, &tile) in tiles
-                    .iter()
-                    .enumerate()
-                    .take(column(swept.right).saturating_add(1))
-                    .skip(column(swept.left))
-                {
-                    if map
-                        .tiles
-                        .get(&(tile as char))
-                        .is_some_and(agge_core::Tile::solid)
-                    {
-                        let obstacle = Bounds::new(
-                            map.at[0] as f32 + x as f32 * cell,
-                            map.at[1] as f32 + y as f32 * cell,
-                            cell,
-                            cell,
-                        );
-                        move_by = bounds.clamp_motion(obstacle, axis, move_by);
-                    }
-                }
+        if mask & agge_core::TILE_LAYER != 0 {
+            for map in &self.room_tiles {
+                move_by = map.clamp(bounds, swept, axis, move_by);
             }
         }
         move_by

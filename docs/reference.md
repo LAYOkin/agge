@@ -18,15 +18,19 @@ IDs match `[a-z][a-z0-9_]{0,47}`. Resource IDs are scoped by kind. Room placemen
 
 | Kind | Data |
 | --- | --- |
-| `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `maps`, `lights` with `at/radius/color`, `darkness` from 0 to 1, and `ui` labels |
-| `object` | `size`, RGBA `color`, `shape` (`rect` or `circle`), optional `sprite` or `animation`, optional `script`, `solid`, `one_way`, `hidden`, and `gravity` |
+| `room` | `bg` RGBA, placement tuples `[id,object,x,y]`, ordered `maps`, `lights`, `darkness`, `ui` labels, `meters`, optional `music`, and `y_sort` |
+| `object` | `size`, RGBA `color`, `shape`, `sprite` or `animation`, `script`, `solid`, `one_way`, `hidden`, `gravity`, `depth`, collision `layer` and `mask` |
 | `sprite` | Project-relative PNG `file` and optional frame rectangles `[x,y,width,height]`; an empty frame list means the entire image |
-| `animation` | Sprite ID, zero-based `frames`, and `fps` |
+| `animation` | Sprite ID, zero-based `frames`, `fps`, and optional `mode` (`loop`, `once`, or `ping_pong`) |
 | `tilemap` | Pixel `cell` size, optional pixel offset `at`, optional `atlas` sprite, palette `tiles`, and equal-width ASCII `rows`. A dot marks an empty tile |
 | `audio` | Project-relative WAV or OGG Vorbis `file` and optional `gain` |
 | `particle` | Burst `count`, `life` in ticks, pixel `speed` per second, `radius`, RGBA `color`, and optional `gravity` |
 
 A label has pixel coordinates `at`, `text`, and optional `size`, `color`, and `value`. `value` names a global number appended to the label. Coordinates start at the top left. Positive Y points down. An object's position and collider use its top-left corner, even for round visuals.
+
+A HUD meter uses `at`, `size:[width,height]`, `value` (a global), `max`, and optional `color` and `track`. It fills left to right with the value clamped between zero and the maximum. A room's `music` names an audio clip. The native player loops it, keeps playing it across rooms that share the same clip ID, and stops it in a room without music.
+
+Draw order uses object `depth`, with smaller numbers drawn first. Room `y_sort:true` also sorts by the bottom of each object's bounds within the same depth, so actors farther down the screen draw in front. Equal positions retain instance order. Draw order leaves physics and scripts in their existing tick order.
 
 ### Room size and camera
 
@@ -74,6 +78,8 @@ step:
 | `spawn object x, y` | Queue creation of an instance at a pixel position |
 | `emit particle` | Emit a particle burst at the instance position |
 | `sound audio` | Queue a clip for native playback |
+| `animate clip` or `animate clip, restart` | Switch the instance's clip, restarting when `restart` is nonzero |
+| `after name, ticks` | Start or replace a named instance timer. Zero cancels it |
 | `goto room` | Queue a room change |
 | `destroy` | End the event and remove the current instance |
 | `if expr` / `else` / `end` | Run a block when the expression evaluates to a nonzero number |
@@ -103,6 +109,23 @@ Each function accepts up to eight numeric parameters. Functions read engine vari
 At each tick, entities run in increasing ID order. After an entity's step, gravity updates vertical velocity and the runtime sweeps its velocity through solid tiles and instances on each axis. An axis blocked by a solid has its velocity reset. Assigning X or Y directly teleports the collider. Step spawns run after the current entities step. The first requested room transition then takes effect at the end of the tick. Globals and runtime IDs persist across rooms. Particles are cleared on entry to a new room.
 
 `grounded()` returns `1` when the instance is stationary or descending vertically and a quarter-pixel downward sweep is blocked. `blocked(dx,dy)` tests a displacement against the same collision rules without changing position. Set `one_way:true` on objects that should block only downward movement crossing their top. An object can use `solid` or `one_way`. Overlap tests through `touch` apply to both.
+
+`layer` and `mask` are unsigned 16-bit sets. A moving object stops against a solid or one-way object when its mask intersects the obstacle's layer. Tiles use layer value `1`. By default objects are on layer `1` and check all layers. A mask of `0` ignores every blocker. Overlap queries through `touch` are independent of movement masks.
+
+### Animation and cooldowns
+
+`animate` preserves elapsed time when the requested clip is already active. Pass `true` to restart it. `once` plays each frame for its normal duration and holds the last one. `anim_done()` returns `1` after the full duration of a one-shot clip. `ping_pong` alternates direction without duplicating the end frames. Clip timing advances on simulation ticks.
+
+`after shot, 16` sets a timer for 16 ticks after the current tick. `remaining(shot)` returns `0` when idle or due. `expired(shot)` returns `1` only on the due tick, unless the script has already changed or canceled it. An instance can hold 16 timers. Timers follow the instance's lifetime and use whole-tick durations up to 60,000.
+
+```text
+step:
+  if down("fire") && remaining(shot) == 0
+    spawn pulse x + 16, y + 8
+    animate attack, true
+    after shot, 16
+  end
+```
 
 The runtime resolves both velocity sweeps before running `hit_x` and then `hit_y`. `impact()` returns the signed pre-clamp velocity for the current hit event and `0` in other events. Event code can change velocity for the next tick. Gravity can cause a vertical hit on successive ticks when an instance rests on a floor. Explicit `move` uses collision sweeps without emitting hit events. Bank Shot uses this pattern to rebound and keep its full horizontal speed.
 

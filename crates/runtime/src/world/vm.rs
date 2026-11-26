@@ -182,6 +182,39 @@ impl World {
                     self.audio.push(id.clone());
                 }
             }
+            Statement::Animate(id, restart) => {
+                let restart = if let Some(expr) = restart {
+                    self.eval(entity, context, expr, 0)? != 0.
+                } else {
+                    false
+                };
+                let current = entity
+                    .active_animation()
+                    .map(|(id, _)| id)
+                    .or_else(|| self.object(&entity.object).animation.as_deref());
+                if restart || current != Some(id) {
+                    let effects = entity.effects.get_or_insert_with(Default::default);
+                    effects.animation = Some(id.clone());
+                    effects.animation_since = self.tick;
+                }
+            }
+            Statement::After(name, value) => {
+                let ticks = self.eval(entity, context, value, 0)?;
+                if !(0. ..=60_000.).contains(&ticks) || ticks.fract() != 0. {
+                    return Err("timer needs a whole tick count from 0 to 60000".into());
+                }
+                if ticks == 0. {
+                    if let Some(effects) = &mut entity.effects {
+                        effects.timers.remove(name);
+                    }
+                } else {
+                    let timers = &mut entity.effects.get_or_insert_with(Default::default).timers;
+                    if timers.len() == 16 && !timers.contains_key(name) {
+                        return Err("instance timer limit exceeded".into());
+                    }
+                    timers.insert(name.clone(), self.tick.saturating_add(ticks as u64));
+                }
+            }
             Statement::Emit(id) => self.emit(id, entity),
             Statement::Goto(id) => {
                 if self.next_room.is_none() {
@@ -251,6 +284,18 @@ impl World {
             }
             Expr::Grounded => flag(self.grounded(e)),
             Expr::Impact => context.impact,
+            Expr::AnimationDone => flag(
+                self.animation(e)
+                    .is_some_and(|(_, clip, elapsed)| clip.done(elapsed)),
+            ),
+            Expr::Timer(name, expired) => {
+                let (remaining, due) = e.timer(name, self.tick);
+                if *expired {
+                    flag(due)
+                } else {
+                    remaining as f32
+                }
+            }
             Expr::Blocked(x, y) => {
                 let x = bounded(self.eval(e, context, x, depth)?)?;
                 let y = bounded(self.eval(e, context, y, depth)?)?;

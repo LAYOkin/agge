@@ -19,7 +19,7 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 
 | MCP tool | Equivalent CLI | Inputs |
 | --- | --- | --- |
-| `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `outline`, `refs`, `session`, `read`, or `schema` |
+| `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `asset`, `outline`, `refs`, `session`, `read`, or `schema` |
 | `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops,preview?,verify?}` |
 | `agge_check` | `agge check PROJECT` | Empty object |
 | `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,input?,expect?,sample?,select?,crop?}` |
@@ -30,7 +30,9 @@ A CLI JSON argument can be inline, `@file.json`, or `-` for stdin. Exit codes ar
 
 Example queries include `{"prefix":"room/","limit":8}`, `{"refs":"object/pilot"}`, `{"get":"room/main","path":"/instances/0"}`, and `{"get":"script/drive","lines":[1,12]}`. Reference queries show both directions and the field or script line. List, outline, and reference queries accept `offset` and `limit` and return `next` when there are more results.
 
-Use `{"get":"room/main/instances/hero"}` to retrieve a placement by ID without reading its room. Group related lookups with `{"read":[{"get":"room/main/instances/hero"},{"refs":"object/pilot"}]}`. The response contains one `revision` and ordered `data` entries. A failed lookup occupies its position as `{ "error": "..." }`. Set `base` on the outer request to reject a stale snapshot. A batch accepts 16 queries and up to 2 MiB of output. Schema and session queries run separately.
+Use `{"get":"room/main/instances/hero"}` to retrieve a placement by ID without reading its room. Group related lookups with `{"read":[{"get":"room/main/instances/hero"},{"refs":"object/pilot"}]}`. The response contains one `revision` and ordered `data` entries. A failed lookup occupies its position as `{ "error": "..." }`. Set `base` on the outer request to reject a stale snapshot. A batch accepts 16 queries and up to 2 MiB of output. Schema, session, and asset queries run separately.
+
+Use `{"asset":"art/ship.png"}` for dimensions and byte size before slicing, or pass a relative WAV or OGG path for sample rate, channels, and frame count when the container provides it. The query can inspect a file before you add its resource. It returns metadata without binary contents.
 
 For scripts, `{"outline":"script/drive"}` returns event ranges as `[first_line,line_count]` and lists the instance variables, globals, and input actions used. Add `"symbol":"var/speed"` or another listed symbol to locate its reads and writes as `[line,access]` pairs. Use `{"get":"script/drive","event":"step"}` for the exact event text. Line numbers start at 1 inside the script.
 
@@ -56,6 +58,8 @@ A regular sprite sheet and tile palette can be configured in one batch.
 
 `slice` replaces the frame list in row-major order. Optional `at` and `gap` values are in PNG pixels. `atlas` maps each key to a consecutive frame starting at `first` (default 0), with `solid` listing which keys block movement. The operation updates those entries and preserves the other keys. Include every existing textured key when changing an assigned atlas. Check media validation after slicing to verify the frame rectangles fit the actual PNG.
 
+After slicing a sheet, use `{"op":"clip","id":"pulse","sprite":"ship","first":4,"count":6,"fps":16,"mode":"once"}` to create or replace an animation. `first` defaults to 0 and `mode` to `loop`. Use a normal animation resource with an explicit frame list for custom frame sequences.
+
 Set a room's bounds and camera in one operation, for example
 `{"op":"camera","room":"road","size":[960,192],"follow":"runner","dead":[64,0],"smooth":12}`.
 The operation replaces the camera configuration. Omit `size` to keep the existing world dimensions. Use a room patch with `"size":null` to restore viewport-sized bounds. The follow target is a room placement ID. `{"refs":"room/road/instances/runner"}` traces the camera's dependency on it.
@@ -72,6 +76,8 @@ Persist small structured project facts with `{"op":"put","key":"controls","value
 
 Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Assertions and samples may read tick 0 after create events. Fields are `room`, `particles`, `camera/x`, `camera/y`, `grounded/placement_id`, `count/object_id`, `global/name`, and `entity/placement_id/property`. `grounded` returns `1` or `0`. Entity properties include position, velocity, object ID, and instance variables.
 
+Use `animation/placement` for the current clip ID, `frame/placement` for its sheet frame, and `timer/placement/name` for remaining ticks. `music` returns the current room's configured audio ID if present.
+
 ```json
 {
   "ticks": 12,
@@ -84,6 +90,8 @@ Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Asser
 Send `select` only when you need runtime state. Selected state includes the camera origin when it differs from `[0,0]`. Use `crop:[x,y,width,height]` in viewport coordinates when an image is needed. The renderer applies the current camera to world layers and lighting. HUD coordinates remain fixed on screen. MCP caps a crop at 512 pixels per edge. The CLI capture command takes an output path and caps a crop at 2048 pixels per edge. A fixed tick count, a fixed seed, and explicit inputs make replay the preferred entry point for automated tests.
 
 For smaller responses, use `sample:[[0,"entity/hero/x"],[12,"global/score"]]`. To read the same fields at several ticks, use `sample:{"at":[0,6,12],"fields":["entity/hero/x","entity/hero/y"]}`. Reports return just the values in request order, with fields grouped by tick in the grid form. A missing field value or a tick skipped after a fault returns `null`. Samples are observations. Add assertions to make a result fail when a value is wrong.
+
+Pass `{"cases":{"startup":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}}}` to `agge test` or `agge_run` for a suite. Each case starts a fresh world from the same compiled revision. Request `base` to pin the revision and `detail:true` to include successful reports and samples. By default the response summarizes passing cases and includes reports only for failures. Each report keeps the first eight failed assertions and counts the rest. Suites accept up to 32 cases and 120,000 total ticks. Selective state and PNG crops are available on a single replay.
 
 
 

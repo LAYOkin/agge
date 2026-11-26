@@ -1,12 +1,17 @@
-use crate::{Bounds, World};
+use crate::{
+    Bounds, World,
+    asset::{audio_info, png_decoder},
+};
 use agge_core::{
-    Color, Kind, Light, Object, Project, Resource, Result, Room, Shape, Tilemap, fail, read_asset,
+    Animation, Color, Kind, Light, Object, Project, Resource, Result, Room, Shape, Tilemap, fail,
+    read_asset,
 };
-use image::{
-    ImageEncoder, RgbaImage,
-    codecs::png::{PngDecoder, PngEncoder},
+use image::{ImageEncoder, RgbaImage, codecs::png::PngEncoder};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    sync::Arc,
 };
-use std::{collections::BTreeMap, io::Cursor, path::Path};
 
 #[derive(Clone, Debug)]
 pub enum Draw<'a> {
@@ -19,19 +24,25 @@ pub enum Draw<'a> {
 
 #[derive(Default)]
 pub struct Media {
-    pub sprites: BTreeMap<String, RgbaImage>,
+    pub sprites: BTreeMap<String, Arc<RgbaImage>>,
 }
 impl Media {
     pub fn load(project: &Project, root: &Path) -> Result<Self> {
         let mut media = Self::default();
+        let mut sheets = BTreeMap::<&str, Arc<RgbaImage>>::new();
+        let mut checked_audio = BTreeSet::new();
         for ((kind, id), resource) in &project.resources {
             if let Resource::Sprite(sprite) = resource {
-                media.load_sprite(root, id, &sprite.file)?;
-                let image = &media.sprites[id];
+                let image = match sheets.entry(&sprite.file) {
+                    std::collections::btree_map::Entry::Occupied(entry) => Arc::clone(entry.get()),
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        Arc::clone(entry.insert(Arc::new(decode_sprite(root, id, &sprite.file)?)))
+                    }
+                };
                 if sprite
                     .frames
                     .iter()
-                    .any(|&frame| !within_image(frame, image))
+                    .any(|&frame| !within_image(frame, &image))
                 {
                     return Err(fail(format!(
                         "{kind}/{id}: sprite frame extends outside {}×{} image",
@@ -39,39 +50,21 @@ impl Media {
                         image.height()
                     )));
                 }
+                media.sprites.insert(id.clone(), image);
             }
-            if let Resource::Audio(audio) = resource {
+            if let Resource::Audio(audio) = resource
+                && checked_audio.insert(audio.file.as_str())
+            {
                 let bytes =
                     read_asset(root, &audio.file).map_err(|e| fail(format!("{kind}/{id}: {e}")))?;
-                let valid = if audio.file.ends_with(".wav") {
-                    bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE")
-                } else {
-                    bytes.starts_with(b"OggS")
-                };
-                if !valid {
-                    return Err(fail(format!("{kind}/{id}: invalid audio container")));
-                }
+                audio_info(&audio.file, bytes).map_err(|e| fail(format!("{kind}/{id}: {e}")))?;
             }
         }
         Ok(media)
     }
     pub fn load_sprite(&mut self, root: &Path, id: &str, file: &str) -> Result<()> {
-        use image::ImageDecoder;
-        let data = read_asset(root, file).map_err(|e| fail(format!("sprite/{id}: {e}")))?;
-        let mut decoder =
-            PngDecoder::new(Cursor::new(data)).map_err(|e| fail(format!("sprite/{id}: {e}")))?;
-        let mut limits = image::Limits::default();
-        limits.max_image_width = Some(8192);
-        limits.max_image_height = Some(8192);
-        limits.max_alloc = Some(64 * 1024 * 1024);
-        decoder.set_limits(limits)?;
-        if decoder.total_bytes() > 64 * 1024 * 1024 {
-            return Err(fail(format!("sprite/{id}: decoded image exceeds 64 MiB")));
-        }
-        self.sprites.insert(
-            id.into(),
-            image::DynamicImage::from_decoder(decoder)?.into_rgba8(),
-        );
+        self.sprites
+            .insert(id.into(), Arc::new(decode_sprite(root, id, file)?));
         Ok(())
     }
 
@@ -81,7 +74,7 @@ impl Media {
         sprite: &str,
         frame: usize,
     ) -> Option<([u32; 4], &RgbaImage)> {
-        let image = self.sprites.get(sprite)?;
+        let image = self.sprites.get(sprite)?.as_ref();
         let Resource::Sprite(data) = project.get(Kind::Sprite, sprite)? else {
             return None;
         };
@@ -92,6 +85,14 @@ impl Media {
         };
         within_image(region, image).then_some((region, image))
     }
+}
+
+fn decode_sprite(root: &Path, id: &str, file: &str) -> Result<RgbaImage> {
+    let decode = || -> Result<RgbaImage> {
+        let decoder = png_decoder(read_asset(root, file)?)?;
+        Ok(image::DynamicImage::from_decoder(decoder)?.into_rgba8())
+    };
+    decode().map_err(|e| fail(format!("sprite/{id}: {e}")))
 }
 
 fn within_image([x, y, w, h]: [u32; 4], image: &RgbaImage) -> bool {
@@ -105,31 +106,72 @@ pub fn edit_scene<'a>(
     draw: &mut impl FnMut(Draw<'a>),
 ) {
     tiles(project, room, view, draw);
-    for i in &room.instances {
-        if let Some(Resource::Object(object)) = project.get(Kind::Object, &i.1) {
+    let mut candidates = room
+        .instances
+        .iter()
+        .enumerate()
+        .filter_map(|(order, i)| {
+            let Resource::Object(object) = project.get(Kind::Object, &i.1)? else {
+                return None;
+            };
             let bounds = Bounds::new(i.2, i.3, object.size[0], object.size[1]);
-            if bounds.overlaps(view) {
-                object_draw(project, object, bounds, 0, draw);
-            }
-        }
+            bounds
+                .overlaps(view)
+                .then_some((order as u64, object, bounds, ()))
+        })
+        .collect::<Vec<_>>();
+    sort_draws(&mut candidates, room.y_sort);
+    for (_, object, bounds, ()) in candidates {
+        let clip = object
+            .animation
+            .as_deref()
+            .and_then(|id| project.get(Kind::Animation, id));
+        let animation = match clip {
+            Some(Resource::Animation(clip)) => Some((clip, 0)),
+            _ => None,
+        };
+        object_draw(object, bounds, animation, draw);
     }
+}
+
+fn sort_draws<T>(items: &mut [(u64, &Object, Bounds, T)], y_sort: bool) {
+    items.sort_unstable_by(|a, b| {
+        a.1.depth
+            .cmp(&b.1.depth)
+            .then_with(|| {
+                if y_sort {
+                    a.2.bottom.total_cmp(&b.2.bottom)
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+            .then_with(|| a.0.cmp(&b.0))
+    });
 }
 
 impl World {
     pub fn draw_scene<'a>(&'a self, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
         tiles(&self.project, self.room(), view, draw);
-        for entity in self.entities.values() {
+        let candidates = self.entities.values().filter_map(|entity| {
             let object = self.object(&entity.object);
             let bounds = entity.bounds(object);
-            if !object.hidden && bounds.overlaps(view) {
-                object_draw(
-                    &self.project,
-                    object,
-                    bounds,
-                    self.snapshot_tick() - entity.born,
-                    draw,
-                );
-            }
+            (!object.hidden && bounds.overlaps(view)).then_some((entity.id, object, bounds, entity))
+        });
+        let mut paint = |(_, object, bounds, entity)| {
+            object_draw(
+                object,
+                bounds,
+                self.animation(entity)
+                    .map(|(_, clip, elapsed)| (clip, elapsed)),
+                draw,
+            );
+        };
+        if self.has_depth || self.room().y_sort {
+            let mut ordered = candidates.collect::<Vec<_>>();
+            sort_draws(&mut ordered, self.room().y_sort);
+            ordered.into_iter().for_each(&mut paint);
+        } else {
+            candidates.for_each(&mut paint);
         }
         for spark in &self.particles {
             let Some(Resource::Particle(style)) = self.project.get(Kind::Particle, &spark.style)
@@ -146,18 +188,39 @@ impl World {
         }
     }
     pub fn draw_ui<'a>(&'a self, draw: &mut impl FnMut(Draw<'a>)) {
-        for label in &self.room().ui {
-            let text = if label.value.is_empty() {
-                label.text.clone()
-            } else {
-                format!(
-                    "{}{}",
-                    label.text,
-                    self.globals.get(&label.value).copied().unwrap_or(0.)
-                )
-            };
-            draw(Draw::Text(label.at, text, label.size, label.color));
+        draw_hud(self.room(), Some(&self.globals), draw);
+    }
+}
+
+pub fn draw_hud<'a>(
+    room: &Room,
+    globals: Option<&BTreeMap<String, f32>>,
+    draw: &mut impl FnMut(Draw<'a>),
+) {
+    for meter in &room.meters {
+        let [x, y] = meter.at;
+        let [width, height] = meter.size;
+        let fraction = globals.map_or(0.5, |globals| {
+            (globals.get(&meter.value).copied().unwrap_or(0.) / meter.max).clamp(0., 1.)
+        });
+        draw(Draw::Rect(Bounds::new(x, y, width, height), meter.track));
+        if fraction > 0. {
+            draw(Draw::Rect(
+                Bounds::new(x, y, width * fraction, height),
+                meter.color,
+            ));
         }
+    }
+    for label in &room.ui {
+        let text = match globals {
+            Some(globals) if !label.value.is_empty() => format!(
+                "{}{}",
+                label.text,
+                globals.get(&label.value).copied().unwrap_or(0.)
+            ),
+            _ => label.text.clone(),
+        };
+        draw(Draw::Text(label.at, text, label.size, label.color));
     }
 }
 fn tiles<'a>(project: &'a Project, room: &Room, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
@@ -205,24 +268,18 @@ pub fn draw_tilemap<'a>(map: &'a Tilemap, view: Bounds, draw: &mut impl FnMut(Dr
 }
 
 fn object_draw<'a>(
-    project: &'a Project,
     object: &'a Object,
     bounds: Bounds,
-    time: u64,
+    animation: Option<(&'a Animation, u64)>,
     draw: &mut impl FnMut(Draw<'a>),
 ) {
-    if let Some(Resource::Animation(anim)) = object
-        .animation
-        .as_ref()
-        .and_then(|id| project.get(Kind::Animation, id))
-        && !anim.frames.is_empty()
+    if let Some((anim, elapsed)) = animation
+        && let Some(slot) = anim.slot(elapsed)
     {
-        let frame = (time.saturating_mul(anim.fps as u64) / project.settings.hz.max(1) as u64)
-            % anim.frames.len() as u64;
         draw(Draw::Sprite(
             bounds,
             &anim.sprite,
-            anim.frames[frame as usize],
+            anim.frames[slot],
             object.color,
         ));
         return;

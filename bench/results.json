@@ -212,6 +212,48 @@
       "completed": true,
       "correct": true,
       "check": ""
+    },
+    {
+      "task": "clip",
+      "engine": "agge",
+      "tokens": 101,
+      "message_tokens": [
+        34,
+        7,
+        33,
+        27
+      ],
+      "messages": [
+        "Create a one-shot animation named burst from six consecutive 16×16 sheet cells starting at frame 2. Play it at 24 fps and hold the last frame.",
+        "agge edit game.agge -",
+        "{\"ops\":[{\"op\":\"clip\",\"id\":\"burst\",\"sprite\":\"sheet\",\"first\":2,\"count\":6,\"fps\":24,\"mode\":\"once\"}]}",
+        "{\"changed\":[\"animation/burst\"],\"revision\":\"RKyOZl_OxwOpJwsFnuWeTg\"}"
+      ],
+      "completed": true,
+      "correct": true,
+      "check": "{\"data\":{\"fps\":24,\"frames\":[2,3,4,5,6,7],\"mode\":\"once\",\"sprite\":\"sheet\"},\"id\":\"animation/burst\",\"revision\":\"RKyOZl_OxwOpJwsFnuWeTg\"}\n{\"changed\":[\"object/probe\",\"room/arena\"],\"committed\":false,\"reports\":[{\"assertions\":4,\"ticks\":40}],\"revision\":\"RKyOZl_OxwOpJwsFnuWeTg\"}"
+    },
+    {
+      "task": "clip",
+      "engine": "godot",
+      "tokens": 198,
+      "message_tokens": [
+        34,
+        4,
+        148,
+        12,
+        0
+      ],
+      "messages": [
+        "Create a one-shot animation named burst from six consecutive 16×16 sheet cells starting at frame 2. Play it at 24 fps and hold the last frame.",
+        "write edit.gd",
+        "extends SceneTree\n\nfunc _initialize() -> void:\n    var frames = SpriteFrames.new()\n    frames.add_animation(\"burst\")\n    frames.set_animation_speed(\"burst\", 24)\n    frames.set_animation_loop(\"burst\", false)\n    var sheet = ImageTexture.create_from_image(Image.load_from_file(\"res://terrain.png\"))\n    for i in range(2, 8):\n        var cell = AtlasTexture.new()\n        cell.atlas = sheet\n        cell.region = Rect2((i % 4) * 16, (i / 4) * 16, 16, 16)\n        frames.add_frame(\"burst\", cell)\n    quit(ResourceSaver.save(frames, \"res://clips.tres\"))\n",
+        "godot --headless --quiet --script edit.gd",
+        ""
+      ],
+      "completed": true,
+      "correct": true,
+      "check": ""
     }
   ]
 }

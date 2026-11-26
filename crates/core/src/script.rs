@@ -49,6 +49,7 @@ enum Scope {
     Var,
     Global,
     Action,
+    Timer,
     Function,
 }
 impl Scope {
@@ -57,6 +58,7 @@ impl Scope {
             Self::Var => "var",
             Self::Global => "global",
             Self::Action => "action",
+            Self::Timer => "timer",
             Self::Function => "fn",
         }
     }
@@ -118,6 +120,8 @@ pub enum Statement {
     Spawn(String, Expr, Expr),
     Emit(String),
     Sound(String),
+    Animate(String, Option<Expr>),
+    After(String, Expr),
     Goto(String),
     Destroy,
     If(Expr, Vec<Instruction>, Vec<Instruction>),
@@ -189,6 +193,8 @@ pub enum Expr {
     Touch(String),
     Grounded,
     Impact,
+    AnimationDone,
+    Timer(String, bool),
     Blocked(Box<Expr>, Box<Expr>),
     Random,
     View(ViewProperty),
@@ -338,6 +344,9 @@ impl<'a> Parser<'a> {
                 | "touch"
                 | "grounded"
                 | "impact"
+                | "anim_done"
+                | "remaining"
+                | "expired"
                 | "blocked"
                 | "down"
                 | "pressed"
@@ -487,6 +496,12 @@ impl<'a> Parser<'a> {
                         }
                         "grounded" => Expr::Grounded,
                         "impact" => Expr::Impact,
+                        "anim_done" => Expr::AnimationDone,
+                        "remaining" | "expired" => {
+                            let name = self.name()?;
+                            self.symbol(Scope::Timer, &name, Access::Read);
+                            Expr::Timer(name, word == "expired")
+                        }
                         "blocked" => {
                             let (x, y) = self.xy()?;
                             Expr::Blocked(Box::new(x), Box::new(y))
@@ -672,6 +687,22 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
             }
             "emit" => Emit(p.reference(Kind::Particle, false)?),
             "sound" => Sound(p.reference(Kind::Audio, false)?),
+            "animate" => {
+                let id = p.reference(Kind::Animation, false)?;
+                let restart = if p.peek() == Some(&Token::Punct(',')) {
+                    p.punct(',')?;
+                    Some(p.expr(0)?)
+                } else {
+                    None
+                };
+                Animate(id, restart)
+            }
+            "after" => {
+                let name = p.name()?;
+                p.symbol(Scope::Timer, &name, Access::Write);
+                p.punct(',')?;
+                After(name, p.expr(0)?)
+            }
             "goto" => Goto(p.reference(Kind::Room, false)?),
             "destroy" => Destroy,
             _ => return Err(p.error(&format!("unknown statement in {}", p.input.trim()))),

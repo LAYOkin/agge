@@ -665,7 +665,7 @@ impl Workbench {
                     play.world
                         .fault()
                         .map(ToString::to_string)
-                        .or_else(|| play.audio.error.clone())
+                        .or_else(|| play.audio.problem().map(str::to_owned))
                 });
                 ui.label(
                     RichText::new(status.as_deref().unwrap_or(&self.status)).color(

@@ -1,5 +1,7 @@
 use agge_core::Project;
-use agge_runtime::{Input, Media, Replay, ReplayRecorder, Scalar, capture, replay};
+use agge_runtime::{
+    CompiledGame, Input, Media, Replay, ReplayRecorder, Scalar, capture, replay, replay_compiled,
+};
 use std::path::Path;
 
 #[test]
@@ -24,6 +26,56 @@ fn bundled_games_are_playable_and_repeatable() {
         let decoded = image::load_from_memory(&crop).unwrap();
         assert_eq!((decoded.width(), decoded.height()), (64, 48));
     }
+}
+
+#[test]
+fn cinder_suite_runs_with_isolated_state_and_renders_its_hud() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/cinder");
+    let mut project = Project::parse(include_str!("../../../examples/cinder/game.agge")).unwrap();
+    let alias = project
+        .get(agge_core::Kind::Sprite, "cinder")
+        .unwrap()
+        .clone();
+    project.put("alias".into(), alias);
+    let media = Media::load(&project, &root).unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &media.sprites["cinder"],
+        &media.sprites["alias"]
+    ));
+    let suite: serde_json::Value =
+        serde_json::from_str(include_str!("../../../examples/cinder/replay.json")).unwrap();
+    let cases: std::collections::BTreeMap<String, Replay> =
+        serde_json::from_value(suite["cases"].clone()).unwrap();
+    let game = CompiledGame::new(project).unwrap();
+    for name in ["win", "filter", "loss", "cooldown", "win"] {
+        let (_, report) = replay_compiled(&game, &cases[name]).unwrap();
+        assert!(report.passed(), "{name}: {report:?}");
+        assert_eq!(report.assertions, cases[name].expect.len());
+    }
+    let spec: Replay =
+        serde_json::from_str(r#"{"room":"yard","ticks":8,"input":[[1,1,"fire"]]}"#).unwrap();
+    let (world, report) = replay_compiled(&game, &spec).unwrap();
+    assert!(report.passed());
+    let png = capture(&world, &media, [124, 206, 84, 6]).unwrap();
+    let frame = image::load_from_memory(&png).unwrap().into_rgba8();
+    assert_eq!(frame.get_pixel(10, 2).0, [85, 236, 199, 255]);
+    assert_eq!(frame.get_pixel(75, 2).0, [22, 28, 43, 255]);
+}
+
+#[test]
+fn top_down_order_sorts_feet_within_depth_and_keeps_layer_precedence() {
+    let project = Project::parse(r#"agge/1 {"size":[64,64]}
+room main {"y_sort":true,"instances":[["front","red",8,14],["high","blue",8,10],["back","green",8,10]]}
+object red {"color":[210,20,70,255]}
+object green {"color":[20,210,70,255]}
+object blue {"size":[8,8],"color":[20,70,210,255],"depth":1}
+"#).unwrap();
+    let spec = serde_json::from_str(r#"{"ticks":0}"#).unwrap();
+    let (world, _) = replay(project, &spec).unwrap();
+    let png = capture(&world, &Media::default(), [8, 14, 16, 10]).unwrap();
+    let image = image::load_from_memory(&png).unwrap().into_rgba8();
+    assert_eq!(image.get_pixel(2, 2).0, [20, 70, 210, 255]);
+    assert_eq!(image.get_pixel(9, 2).0, [210, 20, 70, 255]);
 }
 
 #[test]
@@ -325,7 +377,7 @@ step:
     )
     .unwrap();
     let media = Media {
-        sprites: std::collections::BTreeMap::from([("atlas".into(), atlas)]),
+        sprites: std::collections::BTreeMap::from([("atlas".into(), atlas.into())]),
     };
     let png = capture(&world, &media, [4, 4, 12, 4]).unwrap();
     let pixels = image::load_from_memory(&png).unwrap().into_rgba8();

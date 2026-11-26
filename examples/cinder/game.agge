@@ -1,0 +1,123 @@
+agge/1 {"title":"Cinder Circuit","start":"dock","size":[352,224],"hz":60,"seed":46,"bindings":{"reset":["R"]}}
+room clear {"bg":[13,23,42,255],"instances":[["prompt","retry",0.0,0.0]],"ui":[{"at":[24.0,46.0],"text":"GRID RESTORED","color":[85,236,199,255],"size":24},{"at":[26.0,91.0],"text":"THE DISTRICT HAS POWER","color":[138,175,205,255],"size":11},{"at":[26.0,115.0],"text":"ENTER TO FLY AGAIN","color":[138,175,205,255],"size":11}],"music":"theme"}
+room dock {"bg":[13,23,42,255],"instances":[["launch","control",0.0,0.0]],"ui":[{"at":[24.0,46.0],"text":"CINDER CIRCUIT","color":[85,236,199,255],"size":24},{"at":[26.0,91.0],"text":"RESTORE THE THREE RELAYS","color":[138,175,205,255],"size":11},{"at":[26.0,115.0],"text":"MOVE WITH ARROWS / WASD","color":[138,175,205,255],"size":11},{"at":[26.0,139.0],"text":"HOLD SPACE TO SEND PULSES","color":[138,175,205,255],"size":11},{"at":[26.0,163.0],"text":"THEN FLY TO THE BLUE EXIT","color":[138,175,205,255],"size":11},{"at":[26.0,187.0],"text":"ENTER TO LAUNCH","color":[138,175,205,255],"size":11}],"music":"theme"}
+room lost {"bg":[13,23,42,255],"instances":[["prompt","retry",0.0,0.0]],"ui":[{"at":[24.0,46.0],"text":"SIGNAL LOST","color":[255,111,122,255],"size":24},{"at":[26.0,91.0],"text":"YOUR HULL COULD NOT TAKE IT","color":[138,175,205,255],"size":11},{"at":[26.0,115.0],"text":"ENTER TO TRY AGAIN","color":[138,175,205,255],"size":11}]}
+room yard {"bg":[12,20,36,255],"instances":[["pilot","pilot",32.0,80.0],["center","relay",120.0,84.0],["low","relay",228.0,148.0],["high","relay",176.0,52.0],["sentry","gun",302.0,82.0],["exit","gate",306.0,43.0],["field","field",92.0,72.0]],"maps":["yard"],"lights":[{"at":[78.0,79.0],"radius":77.0,"color":[85,236,199,255]},{"at":[208.0,138.0],"radius":112.0,"color":[111,156,254,255]},{"at":[298.0,64.0],"radius":62.0,"color":[255,183,88,255]}],"ui":[{"at":[14.0,7.0],"text":"CINDER CIRCUIT","color":[85,236,199,255],"size":10},{"at":[205.0,7.0],"text":"RELAYS ","color":[255,183,88,255],"size":10,"value":"relays"},{"at":[16.0,194.0],"text":"HULL","color":[138,175,205,255],"size":9},{"at":[124.0,194.0],"text":"PULSE","color":[138,175,205,255],"size":9},{"at":[235.0,197.0],"text":"R RESTART","color":[138,175,205,255],"size":9}],"meters":[{"at":[16.0,206.0],"size":[83.0,6.0],"value":"hull","max":3.0,"color":[255,111,122,255]},{"at":[124.0,206.0],"size":[84.0,6.0],"value":"charge","max":16.0,"color":[85,236,199,255]}],"music":"theme","y_sort":true,"darkness":0.17}
+object bolt {"size":[7.0,4.0],"color":[255,111,122,255],"script":"bolt","depth":2,"mask":1}
+object control {"size":[16.0,16.0],"color":[255,255,255,255],"script":"entry","hidden":true}
+object field {"size":[7.0,36.0],"color":[106,188,244,125],"solid":true,"depth":-2,"layer":2}
+object gate {"size":[24.0,24.0],"color":[79,144,192,255],"shape":"circle","script":"gate","depth":-1}
+object gun {"size":[17.0,16.0],"color":[234,97,121,255],"shape":"circle","script":"gun"}
+object pilot {"size":[16.0,16.0],"color":[255,255,255,255],"animation":"idle","script":"pilot"}
+object pulse {"size":[8.0,3.0],"color":[255,183,88,255],"script":"pulse","depth":2,"mask":1}
+object relay {"size":[16.0,16.0],"color":[255,255,255,255],"animation":"relay","script":"relay","depth":-1}
+object retry {"size":[16.0,16.0],"color":[255,255,255,255],"script":"restart","hidden":true}
+sprite cinder {"file":"art/cinder.png","frames":[[0,0,16,16],[16,0,16,16],[32,0,16,16],[48,0,16,16],[64,0,16,16],[80,0,16,16],[96,0,16,16],[112,0,16,16],[128,0,16,16],[144,0,16,16]]}
+animation active {"sprite":"cinder","frames":[9],"fps":8}
+animation idle {"sprite":"cinder","frames":[0,1],"fps":7}
+animation relay {"sprite":"cinder","frames":[6,7,8],"fps":8,"mode":"ping_pong"}
+animation shoot {"sprite":"cinder","frames":[2,3,4,5],"fps":20,"mode":"once"}
+tilemap yard {"cell":16,"tiles":{"#":[[46,73,108,255],true],"+":[[27,49,77,255]],"-":[[21,34,56,255]],"x":[[32,56,82,255],true]},"rows":["######################","#....................#","#....................#","#--+--+--+--+--+--+--#","#....................#","#--+--+--+--+--+--+--#","#....................#","#..........xxx.......#","#....................#","#--+--+--+--+--+--+--#","#..........xxx.......#","#.....+++.....++.....#","#....................#","######################"]}
+script bolt
+create:
+  set vx = -210
+  after life, 100
+step:
+  if touch("pilot") || expired(life)
+    destroy
+  end
+hit_x:
+  destroy
+---
+script entry
+step:
+  if pressed("confirm")
+    goto yard
+  end
+---
+script gate
+step:
+  if global(relays) == 3
+    if !opening
+      set opening = 1
+      emit surge
+      sound ping
+    end
+    if touch("pilot")
+      goto clear
+    end
+  end
+create:
+  set opening = 0
+---
+script gun
+create:
+  after fire, 38
+step:
+  if expired(fire)
+    spawn bolt x - 8, y + 5
+    after fire, 55
+  end
+---
+script pilot
+create:
+  global hull = 3
+  global relays = 0
+  global charge = 16
+step:
+  move (down("right") - down("left")) * 120 * dt, (down("down") - down("up")) * 120 * dt
+  if down("fire") && remaining(shot) == 0
+    spawn pulse x + 16, y + 7
+    animate shoot, true
+    after shot, 16
+  else
+    if anim_done()
+      animate idle
+    end
+  end
+  global charge = 16 - remaining(shot)
+  if remaining(shield) == 0 && touch("bolt")
+    global hull = global(hull) - 1
+    emit hit
+    after shield, 30
+    if global(hull) == 0
+      goto lost
+    end
+  end
+  if pressed("reset")
+    goto yard
+  end
+---
+script pulse
+create:
+  set vx = 240
+  after life, 82
+step:
+  if expired(life)
+    destroy
+  end
+hit_x:
+  destroy
+---
+script relay
+step:
+  if !charged && touch("pulse")
+    set charged = 1
+    global relays = global(relays) + 1
+    animate active
+    sound ping
+    emit surge
+  end
+create:
+  set charged = 0
+---
+script restart
+step:
+  if pressed("confirm")
+    goto yard
+  end
+---
+audio ping {"file":"audio/relay.wav","gain":0.5}
+audio theme {"file":"audio/cinder.wav","gain":0.27}
+particle hit {"count":14,"life":22,"speed":87.0,"radius":1.3,"color":[255,111,122,255]}
+particle surge {"count":16,"life":23,"speed":100.0,"radius":1.4,"color":[85,236,199,255]}

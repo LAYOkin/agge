@@ -79,6 +79,7 @@ pub struct Play {
     last: Instant,
     elapsed: f64,
     pending: Input,
+    music_id: Option<String>,
 }
 impl Play {
     pub fn new(project: Project, root: PathBuf, room: Option<&str>) -> Result<Self> {
@@ -94,6 +95,7 @@ impl Play {
             last: Instant::now(),
             elapsed: 0.,
             pending: Input::new(),
+            music_id: None,
         };
         if play.world.fault().is_none() {
             play.audio();
@@ -101,6 +103,17 @@ impl Play {
         Ok(play)
     }
     fn audio(&mut self) {
+        if self.music_id != self.world.room().music {
+            self.music_id.clone_from(&self.world.room().music);
+            let music = self.music_id.as_deref().and_then(|id| {
+                match self.world.project().get(Kind::Audio, id) {
+                    Some(Resource::Audio(audio)) => Some((audio.file.as_str(), audio.gain)),
+                    _ => None,
+                }
+            });
+            self.audio.music(&self.root, music);
+            self.audio.pause_music(self.paused);
+        }
         for id in self.world.drain_audio() {
             if let Some(Resource::Audio(audio)) = self.world.project().get(Kind::Audio, &id) {
                 self.audio.fire(&self.root, &audio.file, audio.gain);
@@ -123,6 +136,8 @@ impl Play {
         }
     }
     pub fn update(&mut self, ctx: &egui::Context) {
+        self.audio
+            .pause_music(self.paused || self.world.fault().is_some());
         if self.world.fault().is_some() {
             return;
         }
@@ -160,9 +175,44 @@ pub struct AudioOutput {
     stream: Option<rodio::OutputStream>,
     clips: BTreeMap<String, Arc<[u8]>>,
     playing: Vec<rodio::Sink>,
+    music: Option<rodio::Sink>,
+    music_error: Option<String>,
     pub error: Option<String>,
 }
 impl AudioOutput {
+    pub fn problem(&self) -> Option<&str> {
+        self.music_error.as_deref().or(self.error.as_deref())
+    }
+
+    fn pause_music(&self, pause: bool) {
+        if let Some(music) = &self.music
+            && music.is_paused() != pause
+        {
+            if pause {
+                music.pause();
+            } else {
+                music.play();
+            }
+        }
+    }
+
+    fn music(&mut self, root: &Path, request: Option<(&str, f32)>) {
+        self.music = None;
+        self.music_error = None;
+        if let Some((file, gain)) = request {
+            match self.load_music(root, file, gain) {
+                Ok(sink) => self.music = Some(sink),
+                Err(error) => self.music_error = Some(format!("Music: {error}")),
+            }
+        }
+    }
+
+    fn load_music(&mut self, root: &Path, file: &str, gain: f32) -> Result<rodio::Sink> {
+        let source = rodio::Decoder::new_looped(Cursor::new(self.clip(root, file)?))?;
+        let sink = self.sink(gain)?;
+        sink.append(source);
+        Ok(sink)
+    }
     pub fn fire(&mut self, root: &Path, file: &str, gain: f32) {
         self.playing.retain(|sink| !sink.empty());
         if self.playing.len() >= 64 {
@@ -173,22 +223,28 @@ impl AudioOutput {
         }
     }
     fn play(&mut self, root: &Path, file: &str, gain: f32) -> Result<()> {
-        if self.stream.is_none() {
-            self.stream = Some(rodio::OutputStreamBuilder::open_default_stream()?);
-        }
-        if !self.clips.contains_key(file) {
-            self.clips
-                .insert(file.into(), read_asset(root, file)?.into());
-        }
-        let bytes = self.clips.get(file).expect("loaded audio");
-        let source = rodio::Decoder::new(Cursor::new(bytes.clone()))?;
-        let sink =
-            rodio::Sink::connect_new(self.stream.as_ref().expect("audio stream opened").mixer());
-        sink.set_volume(gain);
+        let source = rodio::Decoder::new(Cursor::new(self.clip(root, file)?))?;
+        let sink = self.sink(gain)?;
         sink.append(source);
         self.playing.push(sink);
         self.error = None;
         Ok(())
+    }
+    fn sink(&mut self, gain: f32) -> Result<rodio::Sink> {
+        if self.stream.is_none() {
+            self.stream = Some(rodio::OutputStreamBuilder::open_default_stream()?);
+        }
+        let sink =
+            rodio::Sink::connect_new(self.stream.as_ref().expect("audio stream opened").mixer());
+        sink.set_volume(gain);
+        Ok(sink)
+    }
+    fn clip(&mut self, root: &Path, file: &str) -> Result<Arc<[u8]>> {
+        if !self.clips.contains_key(file) {
+            self.clips
+                .insert(file.into(), read_asset(root, file)?.into());
+        }
+        Ok(Arc::clone(&self.clips[file]))
     }
 }
 
@@ -238,6 +294,21 @@ fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input) {
         }
     });
     (held, pressed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cinder_music_decoder_repeats_from_the_first_sample() {
+        let wav = include_bytes!("../../../examples/cinder/audio/cinder.wav");
+        let source = rodio::Decoder::new_looped(Cursor::new(wav.as_slice())).unwrap();
+        let samples = source.take(129_024).collect::<Vec<_>>();
+        assert_eq!(samples.len(), 129_024);
+        assert_eq!(samples[..1024], samples[128_000..]);
+        assert!(samples[..1024].iter().any(|&value| value != 0.));
+    }
 }
 #[derive(Default)]
 pub struct Canvas {

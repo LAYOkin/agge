@@ -6,10 +6,10 @@ use crate::{
     viewport::{Camera, PRIMARY, stroke_cells},
 };
 use agge_core::{
-    Color, FrameGrid, Instance, Kind, Label, Light, Object, Project, Resource, Room, Shape,
-    Tilemap, WHITE,
+    AnimationMode, Color, FrameGrid, Instance, Kind, Label, Light, Meter, Object, Project,
+    Resource, Room, Shape, Tilemap, WHITE,
 };
-use agge_runtime::{Bounds, Draw, Media, edit_scene};
+use agge_runtime::{Bounds, Draw, Media, draw_hud, edit_scene};
 use agge_studio::{color, fit};
 use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::time::{Duration, Instant};
@@ -123,11 +123,11 @@ fn choose(ui: &mut Ui, label: &str, kind: Kind, project: &Project, value: &mut S
             }
         });
 }
-fn link(ui: &mut Ui, kind: Kind, project: &Project, value: &mut Option<String>) {
+fn link(ui: &mut Ui, label: &str, kind: Kind, project: &Project, value: &mut Option<String>) {
     ui.horizontal(|ui| {
-        ui.label(kind.name());
+        ui.label(label);
         let mut id = value.clone().unwrap_or_default();
-        choose(ui, kind.name(), kind, project, &mut id, "None");
+        choose(ui, label, kind, project, &mut id, "None");
         *value = (!id.is_empty()).then_some(id);
     });
 }
@@ -137,6 +137,8 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
         Resource::Room(room) => {
             tint(ui, "Background", &mut room.bg);
             field(ui, "Darkness", &mut room.darkness);
+            link(ui, "Music", Kind::Audio, project, &mut room.music);
+            ui.checkbox(&mut room.y_sort, "Sort actors by feet");
             room_camera::properties(ui, room, project.settings.size);
             ui.collapsing("Tilemap layers", |ui| {
                 let mut removal = None;
@@ -214,6 +216,29 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
                     });
                 }
             });
+            ui.collapsing("HUD meters", |ui| {
+                let mut remove = None;
+                for (i, meter) in room.meters.iter_mut().enumerate() {
+                    ui.push_id(i, |ui| {
+                        text(ui, "Global value", &mut meter.value);
+                        coordinates(ui, "Position", &mut meter.at);
+                        coordinates(ui, "Size", &mut meter.size);
+                        field(ui, "Maximum", &mut meter.max);
+                        tint(ui, "Fill", &mut meter.color);
+                        tint(ui, "Track", &mut meter.track);
+                        if ui.small_button("Remove meter").clicked() {
+                            remove = Some(i);
+                        }
+                        ui.separator();
+                    });
+                }
+                if let Some(i) = remove {
+                    room.meters.remove(i);
+                }
+                if ui.button("Add meter").clicked() {
+                    room.meters.push(Meter::default());
+                }
+            });
             ui.separator();
             ui.heading("Placements");
             egui::ScrollArea::vertical()
@@ -270,9 +295,15 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
                 ui.selectable_value(&mut object.shape, Shape::Rect, "Rectangle");
                 ui.selectable_value(&mut object.shape, Shape::Circle, "Ellipse");
             });
-            link(ui, Kind::Sprite, project, &mut object.sprite);
-            link(ui, Kind::Animation, project, &mut object.animation);
-            link(ui, Kind::Script, project, &mut object.script);
+            link(ui, "Sprite", Kind::Sprite, project, &mut object.sprite);
+            link(
+                ui,
+                "Animation",
+                Kind::Animation,
+                project,
+                &mut object.animation,
+            );
+            link(ui, "Script", Kind::Script, project, &mut object.script);
             ui.horizontal(|ui| {
                 ui.label("Collision");
                 let initial = if object.one_way {
@@ -297,6 +328,12 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
             });
             ui.checkbox(&mut object.hidden, "Hidden in game");
             field(ui, "Gravity", &mut object.gravity);
+            field(ui, "Draw depth", &mut object.depth);
+            ui.collapsing("Collision filtering", |ui| {
+                field(ui, "Layer bits", &mut object.layer);
+                field(ui, "Mask bits", &mut object.mask);
+                ui.small("Tiles use layer value 1. A mask of 0 ignores all blockers.");
+            });
         }
         Resource::Sprite(sprite) => atlas::sprite_properties(ui, sprite, tools),
         Resource::Animation(animation) => {
@@ -309,6 +346,11 @@ pub fn properties(ui: &mut Ui, resource: &mut Resource, project: &Project, tools
                 "Select sprite",
             );
             field(ui, "Frames per second", &mut animation.fps);
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut animation.mode, AnimationMode::Loop, "Loop");
+                ui.selectable_value(&mut animation.mode, AnimationMode::Once, "Once");
+                ui.selectable_value(&mut animation.mode, AnimationMode::PingPong, "Ping-pong");
+            });
             for (i, frame) in animation.frames.iter_mut().enumerate() {
                 ui.push_id(i, |ui| field(ui, &format!("Frame {}", i + 1), frame));
             }
@@ -389,7 +431,7 @@ pub fn canvas(ui: &mut Ui, work: &mut Workbench, id: &str, resource: &mut Resour
         Resource::Animation(animation) => {
             if ui
                 .button(if work.tool.animation.is_some() {
-                    "Pause"
+                    "Stop preview"
                 } else {
                     "Preview animation"
                 })
@@ -404,10 +446,24 @@ pub fn canvas(ui: &mut Ui, work: &mut Workbench, id: &str, resource: &mut Resour
             let area = surface(ui, [256, 192], Sense::hover()).0;
             if !animation.frames.is_empty() {
                 if let Some(start) = work.tool.animation {
-                    work.tool.frame = (start.elapsed().as_secs_f32() * animation.fps.max(1) as f32)
-                        as usize
-                        % animation.frames.len();
-                    ui.ctx().request_repaint_after(Duration::from_millis(16));
+                    let elapsed =
+                        (start.elapsed().as_secs_f64() * f64::from(animation.fps.max(1))) as u64;
+                    work.tool.frame = animation.slot(elapsed).unwrap_or(0);
+                    if animation.done(elapsed) {
+                        work.tool.animation = None;
+                        ui.ctx().request_repaint();
+                    } else {
+                        ui.ctx().request_repaint_after(Duration::from_millis(16));
+                    }
+                }
+                if ui
+                    .add(
+                        egui::Slider::new(&mut work.tool.frame, 0..=animation.frames.len() - 1)
+                            .text("Frame"),
+                    )
+                    .changed()
+                {
+                    work.tool.animation = None;
                 }
                 let slot = work.tool.frame.min(animation.frames.len() - 1);
                 asset_preview(
@@ -615,7 +671,7 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
     });
     let preview = room_camera::guide(&painter, project, room, area.min, scale, viewport, size);
     let clipped = painter.with_clip_rect(preview);
-    for label in &room.ui {
+    draw_hud(room, None, &mut |shape| {
         work.canvas.paint(
             ui.ctx(),
             &clipped,
@@ -623,9 +679,9 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
             scale,
             &work.media,
             project,
-            Draw::Text(label.at, label.text.clone(), label.size, label.color),
+            shape,
         );
-    }
+    });
     for i in &room.instances {
         if work.tool.selected.as_ref() == Some(&i.0)
             && let Some(Resource::Object(object)) = project.get(Kind::Object, &i.1)

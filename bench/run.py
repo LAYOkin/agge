@@ -9,12 +9,14 @@ import tiktoken
 
 import atlas_case
 import bounce_case
+import clip_case
 
 
 GRID = "Place a 12×8 grid of cells in arena at (24,32), spaced (32,24). Name them cell_x_y."
 RENAME = "Rename arena to vault. Preserve startup and the return transition from return_room."
 SPRINT = "Update drive so holding fire doubles horizontal movement. Keep vertical speed and the starting shield unchanged."
-TASKS = {"grid": GRID, "rename": RENAME, "sprint": SPRINT, "atlas": atlas_case.PROMPT, "bounce": bounce_case.PROMPT}
+TASKS = {"grid": GRID, "rename": RENAME, "sprint": SPRINT, "atlas": atlas_case.PROMPT,
+         "bounce": bounce_case.PROMPT, "clip": clip_case.PROMPT}
 AGGE_AXES = [
     '  set dx = (down("right") - down("left")) * 120 * dt',
     '  set dy = (down("down") - down("up")) * 120 * dt',
@@ -141,7 +143,8 @@ func verify() -> void:
     arena.free()
     quit(0 if good else 1)
 '''
-GODOT_CHECKS = {"grid": GODOT_GRID_CHECK, "rename": GODOT_RENAME_CHECK, "sprint": GODOT_SPRINT_CHECK, "atlas": atlas_case.GODOT_CHECK, "bounce": bounce_case.GODOT_CHECK}
+GODOT_CHECKS = {"grid": GODOT_GRID_CHECK, "rename": GODOT_RENAME_CHECK, "sprint": GODOT_SPRINT_CHECK,
+                "atlas": atlas_case.GODOT_CHECK, "bounce": bounce_case.GODOT_CHECK, "clip": clip_case.GODOT_CHECK}
 
 
 def compact(obj):
@@ -177,6 +180,10 @@ step:
         source = atlas_case.AGGE_PROJECT
     if task == "bounce":
         source = bounce_case.AGGE_PROJECT
+    if task == "clip":
+        atlas_case.write_png(path.parent / "terrain.png")
+        source = ('agge/1 {"start":"arena"}\nroom arena {}\nsprite sheet ' +
+                  compact({"file": "terrain.png", "frames": clip_case.FRAMES}) + '\n')
     path.write_text(source, encoding="utf-8")
 
 
@@ -193,7 +200,7 @@ position = Vector2(10, 20)
 script = ExtResource("1")
 '''
         fixtures["drive.gd"] = GODOT_DRIVE
-    if task == "atlas":
+    if task in ("atlas", "clip"):
         atlas_case.write_png(folder / "terrain.png")
     if task == "bounce":
         fixtures["arena.tscn"] = bounce_case.GODOT_ARENA
@@ -203,6 +210,12 @@ script = ExtResource("1")
 
 
 def agge_check(agge, folder, task):
+    if task == "clip":
+        clip = run([agge, "query", "game.agge", "-"], folder, compact({"get": "animation/burst"}))
+        probe = run([agge, "edit", "game.agge", "-"], folder, compact(clip_case.AGGE_PROBE))
+        expected = {"sprite": "sheet", "frames": list(range(2, 8)), "fps": 24, "mode": "once"}
+        return (clip.returncode == 0 and probe.returncode == 0 and json.loads(clip.stdout)["data"] == expected,
+                "\n".join(map(receipt, [clip, probe])))
     if task == "grid":
         assertions = [{"at":0,"field":"count/cell","is":96}]
         for y in range(8):
@@ -252,6 +265,8 @@ def agge_trial(agge, folder, task):
         ops = atlas_case.AGGE_EDITS
     elif task == "bounce":
         ops = bounce_case.AGGE_EDITS
+    elif task == "clip":
+        ops = clip_case.AGGE_EDITS
     else:
         ops = [{"op":"splice","id":"drive","at":[6,1],"text":'  move dx*(1+down("fire")),dy'}]
     payload = compact({"ops": ops})
@@ -263,9 +278,9 @@ def agge_trial(agge, folder, task):
 
 def godot_trial(godot, folder, task):
     godot_seed(folder, task)
-    if task in ("grid", "atlas"):
+    if task in ("grid", "atlas", "clip"):
         filename = "edit.gd"
-        source = GODOT_GRID_EDIT if task == "grid" else atlas_case.GODOT_EDIT
+        source = {"grid": GODOT_GRID_EDIT, "atlas": atlas_case.GODOT_EDIT, "clip": clip_case.GODOT_EDIT}[task]
         command = [godot, "--headless", "--quiet", "--script", filename]
         display = "godot --headless --quiet --script edit.gd"
     else:

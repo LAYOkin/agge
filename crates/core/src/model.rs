@@ -85,6 +85,7 @@ impl Default for Settings {
 
 pub type Color = [u8; 4];
 pub const WHITE: Color = [255; 4];
+pub const TILE_LAYER: u16 = 1;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Instance(pub String, pub String, pub f32, pub f32);
@@ -108,6 +109,39 @@ pub struct Label {
     pub size: u32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Meter {
+    pub at: [f32; 2],
+    pub size: [f32; 2],
+    pub value: String,
+    pub max: f32,
+    #[serde(default = "white", skip_serializing_if = "is_white")]
+    pub color: Color,
+    #[serde(default = "meter_track", skip_serializing_if = "is_meter_track")]
+    pub track: Color,
+}
+
+fn meter_track() -> Color {
+    [22, 28, 43, 255]
+}
+fn is_meter_track(value: &Color) -> bool {
+    *value == meter_track()
+}
+
+impl Default for Meter {
+    fn default() -> Self {
+        Self {
+            at: [16., 32.],
+            size: [96., 8.],
+            value: "health".into(),
+            max: 100.,
+            color: WHITE,
+            track: meter_track(),
+        }
+    }
 }
 
 fn white() -> Color {
@@ -192,6 +226,12 @@ pub struct Room {
     pub lights: Vec<Light>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ui: Vec<Label>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub meters: Vec<Meter>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub music: Option<String>,
+    #[serde(skip_serializing_if = "no")]
+    pub y_sort: bool,
     #[serde(skip_serializing_if = "zero")]
     pub darkness: f32,
 }
@@ -205,6 +245,9 @@ impl Default for Room {
             maps: vec![],
             lights: vec![],
             ui: vec![],
+            meters: vec![],
+            music: None,
+            y_sort: false,
             darkness: 0.,
         }
     }
@@ -248,6 +291,12 @@ pub struct Object {
     pub hidden: bool,
     #[serde(skip_serializing_if = "zero")]
     pub gravity: f32,
+    #[serde(skip_serializing_if = "zero_depth")]
+    pub depth: i16,
+    #[serde(skip_serializing_if = "default_layer")]
+    pub layer: u16,
+    #[serde(skip_serializing_if = "default_mask")]
+    pub mask: u16,
 }
 impl Default for Object {
     fn default() -> Self {
@@ -262,8 +311,21 @@ impl Default for Object {
             one_way: false,
             hidden: false,
             gravity: 0.,
+            depth: 0,
+            layer: TILE_LAYER,
+            mask: u16::MAX,
         }
     }
+}
+
+fn zero_depth(value: &i16) -> bool {
+    *value == 0
+}
+fn default_layer(value: &u16) -> bool {
+    *value == TILE_LAYER
+}
+fn default_mask(value: &u16) -> bool {
+    *value == u16::MAX
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -330,6 +392,50 @@ pub struct Animation {
     pub sprite: String,
     pub frames: Vec<usize>,
     pub fps: u32,
+    #[serde(default, skip_serializing_if = "AnimationMode::is_loop")]
+    pub mode: AnimationMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnimationMode {
+    #[default]
+    Loop,
+    Once,
+    PingPong,
+}
+
+impl AnimationMode {
+    fn is_loop(&self) -> bool {
+        *self == Self::Loop
+    }
+}
+
+impl Animation {
+    pub fn slot(&self, elapsed_frames: u64) -> Option<usize> {
+        let len = self.frames.len() as u64;
+        if len == 0 {
+            return None;
+        }
+        Some(match self.mode {
+            AnimationMode::Loop => elapsed_frames % len,
+            AnimationMode::Once => elapsed_frames.min(len - 1),
+            AnimationMode::PingPong if len > 1 => {
+                let period = 2 * (len - 1);
+                let phase = elapsed_frames % period;
+                phase.min(period - phase)
+            }
+            AnimationMode::PingPong => 0,
+        } as usize)
+    }
+
+    pub fn elapsed_frames(&self, ticks: u64, hz: u32) -> u64 {
+        ticks.saturating_mul(u64::from(self.fps)) / u64::from(hz.max(1))
+    }
+
+    pub fn done(&self, elapsed_frames: u64) -> bool {
+        self.mode == AnimationMode::Once && elapsed_frames >= self.frames.len() as u64
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

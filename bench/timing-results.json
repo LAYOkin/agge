@@ -1,0 +1,321 @@
+{
+  "platform": "Windows",
+  "cpu": "AMD Ryzen 7 7700X",
+  "build": "release",
+  "godot": "4.5.1",
+  "replay": [
+    {
+      "fixture": "tiles",
+      "ticks": 480,
+      "cells": 16384,
+      "movers": 256,
+      "median_ms": 26.12,
+      "samples_ms": [
+        26.18,
+        26.36,
+        26.04,
+        26.23,
+        26.26,
+        26.02,
+        25.95,
+        26.03,
+        26.12
+      ],
+      "build": "70cd11a"
+    },
+    {
+      "fixture": "tiles",
+      "ticks": 480,
+      "cells": 16384,
+      "movers": 256,
+      "median_ms": 19.02,
+      "samples_ms": [
+        18.95,
+        18.94,
+        19.05,
+        19.08,
+        18.93,
+        19.02,
+        19.03,
+        19.86,
+        18.9
+      ],
+      "build": "development-pass"
+    },
+    {
+      "fixture": "collision",
+      "ticks": 240,
+      "solids": 512,
+      "movers": 256,
+      "median_ms": 33.91,
+      "samples_ms": [
+        34.46,
+        33.66,
+        33.5,
+        34.87,
+        34.29,
+        34.61,
+        33.62,
+        33.91,
+        33.62
+      ],
+      "build": "70cd11a"
+    },
+    {
+      "fixture": "collision",
+      "ticks": 240,
+      "solids": 512,
+      "movers": 256,
+      "median_ms": 31.79,
+      "samples_ms": [
+        32.0,
+        31.48,
+        31.68,
+        32.04,
+        32.46,
+        31.79,
+        31.82,
+        31.62,
+        31.79
+      ],
+      "build": "development-pass"
+    }
+  ],
+  "suite": {
+    "cases": 24,
+    "assertions": 48,
+    "scripts": 513,
+    "runs": [
+      {
+        "suite": false,
+        "median_ms": 150.26,
+        "samples_ms": [
+          152.14,
+          149.62,
+          150.07,
+          150.26,
+          151.53,
+          152.0,
+          148.79
+        ]
+      },
+      {
+        "suite": true,
+        "median_ms": 6.57,
+        "samples_ms": [
+          6.85,
+          6.07,
+          6.53,
+          6.41,
+          6.61,
+          6.57,
+          6.71
+        ]
+      }
+    ],
+    "mcp": {
+      "queries": 24,
+      "runs": [
+        {
+          "cached": false,
+          "median_ms": 64.33,
+          "samples_ms": [
+            67.64,
+            67.27,
+            64.11,
+            67.18,
+            64.33,
+            63.68,
+            63.79
+          ]
+        },
+        {
+          "cached": true,
+          "median_ms": 8.19,
+          "samples_ms": [
+            8.84,
+            8.1,
+            8.48,
+            7.76,
+            8.22,
+            7.77,
+            8.19
+          ]
+        }
+      ]
+    }
+  },
+  "cross_engine_edit": {
+    "scope": "fresh fixture setup, edit, and independent verification",
+    "runs": [
+      {
+        "task": "grid",
+        "engine": "agge",
+        "median_ms": 10.95,
+        "samples_ms": [
+          11.1,
+          9.51,
+          10.95,
+          9.9,
+          11.09
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "grid",
+        "engine": "godot",
+        "median_ms": 298.45,
+        "samples_ms": [
+          299.72,
+          297.6,
+          298.34,
+          298.45,
+          298.88
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "rename",
+        "engine": "agge",
+        "median_ms": 16.6,
+        "samples_ms": [
+          16.6,
+          15.1,
+          16.67,
+          15.28,
+          16.76
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "rename",
+        "engine": "godot",
+        "median_ms": 182.33,
+        "samples_ms": [
+          182.33,
+          180.78,
+          183.24,
+          182.16,
+          183.63
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "sprint",
+        "engine": "agge",
+        "median_ms": 9.9,
+        "samples_ms": [
+          9.9,
+          9.02,
+          10.42,
+          8.98,
+          10.26
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "sprint",
+        "engine": "godot",
+        "median_ms": 181.28,
+        "samples_ms": [
+          181.28,
+          179.41,
+          182.05,
+          181.39,
+          181.26
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "atlas",
+        "engine": "agge",
+        "median_ms": 20.58,
+        "samples_ms": [
+          21.06,
+          19.45,
+          20.64,
+          19.74,
+          20.58
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "atlas",
+        "engine": "godot",
+        "median_ms": 298.76,
+        "samples_ms": [
+          298.76,
+          299.88,
+          300.47,
+          298.51,
+          298.06
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "bounce",
+        "engine": "agge",
+        "median_ms": 10.18,
+        "samples_ms": [
+          10.27,
+          9.13,
+          10.18,
+          9.03,
+          10.4
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "bounce",
+        "engine": "godot",
+        "median_ms": 181.67,
+        "samples_ms": [
+          181.69,
+          180.64,
+          181.29,
+          181.67,
+          182.49
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "clip",
+        "engine": "agge",
+        "median_ms": 14.18,
+        "samples_ms": [
+          14.18,
+          12.86,
+          14.74,
+          13.61,
+          14.34
+        ],
+        "completed": 5,
+        "correct": 5
+      },
+      {
+        "task": "clip",
+        "engine": "godot",
+        "median_ms": 578.89,
+        "samples_ms": [
+          577.84,
+          576.76,
+          578.89,
+          579.32,
+          580.02
+        ],
+        "completed": 5,
+        "correct": 5
+      }
+    ]
+  }
+}

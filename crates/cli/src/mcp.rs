@@ -13,6 +13,7 @@ pub fn serve(store: &Store) -> Result<()> {
     let mut input = io::stdin().lock();
     let mut out = io::stdout().lock();
     let mut phase = Phase::New;
+    let mut queries = service::QueryCache::default();
     loop {
         let mut line = Vec::new();
         let n = Read::by_ref(&mut input)
@@ -30,7 +31,7 @@ pub fn serve(store: &Store) -> Result<()> {
             break;
         }
         let response = match serde_json::from_slice::<Value>(&line) {
-            Ok(message) => respond(store, &mut phase, message),
+            Ok(message) => respond(store, &mut phase, &mut queries, message),
             Err(_) => Some(error(Value::Null, -32700, "invalid JSON")),
         };
         if let Some(response) = response {
@@ -48,7 +49,12 @@ enum Phase {
     Ready,
 }
 
-fn respond(store: &Store, phase: &mut Phase, message: Value) -> Option<Value> {
+fn respond(
+    store: &Store,
+    phase: &mut Phase,
+    queries: &mut service::QueryCache,
+    message: Value,
+) -> Option<Value> {
     let id = message.get("id").cloned();
     let method = message["method"].as_str();
     if message["jsonrpc"] != "2.0"
@@ -94,7 +100,7 @@ fn respond(store: &Store, phase: &mut Phase, message: Value) -> Option<Value> {
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            call(store, name, args)
+            call(store, name, args, queries)
         }
         _ => return Some(error(id, -32601, "method not found")),
     };
@@ -122,8 +128,8 @@ fn tool_list() -> Vec<Value> {
     vec![
         tool(
             NAMES[0],
-            "Read IDs, fields, events, symbols, refs, or session changes. read batches queries at one revision.",
-            json!({"get":text,"path":text,"lines":array,"event":text,"function":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
+            "Read IDs, fields, asset metadata, symbols, refs or changes. read batches queries at one revision.",
+            json!({"get":text,"asset":text,"path":text,"lines":array,"event":text,"function":text,"outline":text,"symbol":text,"refs":text,"prefix":text,"session":text,"advance":boolean,"offset":number,"limit":number,"schema":text,"read":array,"base":text}),
             json!([]),
         ),
         tool(
@@ -140,9 +146,9 @@ fn tool_list() -> Vec<Value> {
         ),
         tool(
             NAMES[3],
-            "Replay. input [first,last,action], expect {at,field,is,tolerance?}, sample [[tick,field]] or {at,fields}. Optional state and PNG crop.",
-            json!({"ticks":number,"room":text,"input":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array}),
-            json!(["ticks"]),
+            "Replay ticks with input [first,last,action], expect, sample, state or crop. Or run named replay cases with one summary.",
+            json!({"ticks":number,"room":text,"input":array,"expect":array,"sample":{"type":["array","object"]},"select":{"type":"object"},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
+            json!([]),
         ),
         tool(
             NAMES[4],
@@ -159,13 +165,13 @@ fn tool_list() -> Vec<Value> {
     ]
 }
 
-fn call(store: &Store, name: &str, args: Value) -> Value {
+fn call(store: &Store, name: &str, args: Value, queries: &mut service::QueryCache) -> Value {
     let computed = (|| -> Result<service::Simulation> {
         if !args.is_object() {
             return Err(fail("tool arguments must be an object"));
         }
         let value = match name {
-            "agge_query" => service::query(store, args)?,
+            "agge_query" => service::query_with_cache(store, args, queries)?,
             "agge_edit" => {
                 let (value, ok) = service::edit(store, args)?;
                 return Ok((value, ok, None));

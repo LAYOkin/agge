@@ -595,7 +595,9 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
             &mut work.tool.place,
             "Select / move",
         );
-        ui.label("Snap");
+        ui.label("Snap").on_hover_text(
+            "Select a placement on the canvas, then use the arrow keys to nudge it.",
+        );
         ui.add(egui::DragValue::new(&mut work.tool.snap).range(1..=128));
         work.tool.camera.toolbar(ui);
     });
@@ -626,6 +628,7 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
     {
         if work.tool.place.is_empty() {
             work.tool.selected = select_at(pos, room);
+            response.request_focus();
         } else if room.instances.len() < 4096 {
             let id = unused_placement_id(room);
             let p = view.local(pos);
@@ -666,6 +669,37 @@ fn room_canvas(ui: &mut Ui, work: &mut Workbench, room: &mut Room) {
         let p = (pos - area.min) / scale - work.tool.drag_offset;
         i.2 = snapped(p.x);
         i.3 = snapped(p.y);
+    }
+    if response.has_focus()
+        && work.tool.place.is_empty()
+        && let Some(placement) = room
+            .instances
+            .iter_mut()
+            .find(|instance| work.tool.selected.as_ref() == Some(&instance.0))
+    {
+        ui.memory_mut(|memory| {
+            memory.set_focus_lock_filter(
+                response.id,
+                egui::EventFilter {
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    ..Default::default()
+                },
+            );
+        });
+        let [dx, dy] = ui.input_mut(|input| {
+            let mut count = |key| input.count_and_consume_key(egui::Modifiers::NONE, key) as f32;
+            [
+                count(egui::Key::ArrowRight) - count(egui::Key::ArrowLeft),
+                count(egui::Key::ArrowDown) - count(egui::Key::ArrowUp),
+            ]
+        });
+        if dx != 0. {
+            placement.2 = (placement.2 + dx * snap).clamp(-1_000_000., 1_000_000.);
+        }
+        if dy != 0. {
+            placement.3 = (placement.3 + dy * snap).clamp(-1_000_000., 1_000_000.);
+        }
     }
     edit_scene(project, room, view.visible_bounds(), &mut |shape| {
         work.canvas.paint(

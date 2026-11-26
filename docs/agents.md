@@ -76,7 +76,9 @@ Persist small structured project facts with `{"op":"put","key":"controls","value
 
 Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Assertions and samples may read tick 0 after create events. Fields are `room`, `particles`, `camera/x`, `camera/y`, `grounded/placement_id`, `count/object_id`, `global/name`, and `entity/placement_id/property`. `grounded` returns `1` or `0`. Entity properties include position, velocity, object ID, and instance variables.
 
-Use `animation/placement` for the current clip ID, `frame/placement` for its sheet frame, and `timer/placement/name` for remaining ticks. `music` returns the current room's configured audio ID if present.
+Use `animation/placement` for the current clip ID and `frame/placement` for its sheet frame. `music` returns the current room's configured audio ID if present.
+
+Use `timer/placement/name` for remaining ticks and `expired/placement/name` to check when a timer is due. `expired` returns `1` only on the due tick and `0` otherwise. Replays read after the tick finishes, so a timer that a script canceled or rescheduled during that tick returns `0`.
 
 Use `sound/audio_id` to count how many times a sound effect was queued on a tick. For example, `{"at":12,"field":"sound/ping","is":1}` checks for one cue. A known clip that was silent returns `0`. An unknown clip ID returns no value. Tick 0 includes sounds from startup create events, and the check works without playing audio.
 

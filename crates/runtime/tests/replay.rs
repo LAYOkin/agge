@@ -199,6 +199,40 @@ step:
 }
 
 #[test]
+fn replay_timer_expiry_is_visible_only_on_the_due_tick() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {"instances":[["hero","hero",0,0]]}
+object hero {"script":"drive"}
+script drive
+create:
+  after ready, 2
+  after reset, 2
+step:
+  if expired(reset)
+    after reset, 3
+  end
+---
+"#,
+    )
+    .unwrap();
+    let spec: Replay = serde_json::from_str(
+        r#"{"ticks":3,"expect":[
+          {"at":1,"field":"expired/hero/ready","is":0},
+          {"at":2,"field":"expired/hero/ready","is":1},
+          {"at":2,"field":"timer/hero/ready","is":0},
+          {"at":2,"field":"expired/hero/reset","is":0},
+          {"at":2,"field":"timer/hero/reset","is":3},
+          {"at":3,"field":"expired/hero/ready","is":0}
+        ]}"#,
+    )
+    .unwrap();
+    let (_, report) = replay(project, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+    assert_eq!(report.assertions, spec.expect.len());
+}
+
+#[test]
 fn replay_counts_queued_sounds_by_tick_and_clip() {
     let project = Project::parse(
         r#"agge/1 {}

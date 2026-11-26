@@ -287,6 +287,10 @@ fn read(world: &World, field: &str) -> Option<Scalar> {
                 .timer(name, world.snapshot_tick())
                 .0 as f32
         }
+        ("expired", Some(placement), Some(name), None) => {
+            let (_, due) = world.placed(placement)?.timer(name, world.snapshot_tick());
+            u8::from(due) as f32
+        }
         ("camera", Some("x"), None, None) => world.camera()[0],
         ("camera", Some("y"), None, None) => world.camera()[1],
         ("global", Some(key), None, None) => world.globals.get(key).copied().unwrap_or(0.),

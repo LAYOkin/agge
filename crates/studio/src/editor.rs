@@ -26,13 +26,12 @@ impl Studio {
         };
         if let Some(file) = file {
             studio.file = file.to_string_lossy().into_owned();
-            studio.open(false);
+            studio.open(Store::new(file), false);
         }
         studio
     }
-    fn open(&mut self, create: bool) {
+    fn open(&mut self, store: Store, create: bool) {
         let result = (|| -> Result<Workbench> {
-            let store = Store::new(self.file.trim());
             if create {
                 store.init(&Project::default())?;
             }
@@ -70,10 +69,10 @@ impl eframe::App for Studio {
                         .desired_width(380.),
                 );
                 if ui.button("Open project").clicked() {
-                    self.open(false);
+                    self.open(Store::new(self.file.trim()), false);
                 }
                 if ui.button("Create project").clicked() {
-                    self.open(true);
+                    self.open(Store::new(self.file.trim()), true);
                 }
                 if !self.message.is_empty() {
                     ui.colored_label(Color32::LIGHT_RED, &self.message);

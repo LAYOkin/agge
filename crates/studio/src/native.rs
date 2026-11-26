@@ -69,6 +69,8 @@ impl eframe::App for Player {
     }
 }
 
+type KeyBindings = BTreeMap<Key, Input>;
+
 pub struct Play {
     pub world: World,
     pub media: Media,
@@ -79,11 +81,13 @@ pub struct Play {
     last: Option<Instant>,
     elapsed: f64,
     pending: Input,
+    bindings: KeyBindings,
     music_id: Option<String>,
 }
 impl Play {
     pub fn new(project: Project, root: PathBuf, room: Option<&str>) -> Result<Self> {
         let media = Media::load(&project, &root)?;
+        let bindings = compile_bindings(&project);
         let world = World::preview(project, room)?;
         let mut play = Self {
             world,
@@ -95,6 +99,7 @@ impl Play {
             last: None,
             elapsed: 0.,
             pending: Input::new(),
+            bindings,
             music_id: None,
         };
         if play.world.fault().is_none() {
@@ -122,7 +127,7 @@ impl Play {
     }
     pub fn step(&mut self, ctx: &egui::Context) {
         if self.world.fault().is_none() {
-            let (mut input, pressed, _) = actions(ctx, self.world.project());
+            let (mut input, pressed, _) = actions(ctx, &self.bindings);
             input.extend(pressed);
             self.advance(&input);
         }
@@ -154,7 +159,7 @@ impl Play {
         if let Some(last) = self.last.replace(now) {
             self.elapsed += (now - last).as_secs_f64().min(0.25);
         }
-        let (held, pressed, reset_pending) = actions(ctx, self.world.project());
+        let (held, pressed, reset_pending) = actions(ctx, &self.bindings);
         if reset_pending {
             self.pending.clear();
         }
@@ -254,19 +259,47 @@ impl AudioOutput {
     }
 }
 
-fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input, bool) {
-    let mut held = Input::new();
-    let mut pressed = Input::new();
-    let reset_pending = ctx.input(|input| {
+fn compile_bindings(project: &Project) -> KeyBindings {
+    let mut bindings = KeyBindings::new();
+    for (action, keys) in [
+        ("left", [Key::ArrowLeft, Key::A]),
+        ("right", [Key::ArrowRight, Key::D]),
+        ("up", [Key::ArrowUp, Key::W]),
+        ("down", [Key::ArrowDown, Key::S]),
+        ("fire", [Key::Space, Key::Z]),
+        ("confirm", [Key::Enter, Key::X]),
+        ("cancel", [Key::Escape, Key::Backspace]),
+    ] {
+        if !project.settings.bindings.contains_key(action) {
+            for key in keys {
+                bindings.entry(key).or_default().insert(action.into());
+            }
+        }
+    }
+    for (action, names) in &project.settings.bindings {
+        for &key in Key::ALL {
+            if names
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(key.name()))
+            {
+                bindings.entry(key).or_default().insert(action.clone());
+            }
+        }
+    }
+    bindings
+}
+
+fn actions(ctx: &egui::Context, bindings: &KeyBindings) -> (Input, Input, bool) {
+    ctx.input(|input| {
         if !input.focused {
-            return true;
+            return (Input::new(), Input::new(), true);
         }
         let focus_loss = input
             .events
             .iter()
             .rposition(|event| matches!(event, egui::Event::WindowFocused(false)));
         let events = &input.events[focus_loss.map_or(0, |index| index + 1)..];
-        let just_pressed = events
+        let pressed = events
             .iter()
             .filter_map(|event| match event {
                 egui::Event::Key {
@@ -274,45 +307,45 @@ fn actions(ctx: &egui::Context, project: &Project) -> (Input, Input, bool) {
                     pressed: true,
                     repeat: false,
                     ..
-                } => Some(*key),
+                } => bindings.get(key),
                 _ => None,
             })
-            .collect::<Vec<_>>();
-        let mut map_action = |action: &str, matches: &dyn Fn(Key) -> bool| {
-            if input.keys_down.iter().any(|key| matches(*key)) {
-                held.insert(action.into());
-            }
-            if just_pressed.iter().any(|key| matches(*key)) {
-                pressed.insert(action.into());
-            }
-        };
-        for (name, keys) in [
-            ("left", [Key::ArrowLeft, Key::A]),
-            ("right", [Key::ArrowRight, Key::D]),
-            ("up", [Key::ArrowUp, Key::W]),
-            ("down", [Key::ArrowDown, Key::S]),
-            ("fire", [Key::Space, Key::Z]),
-            ("confirm", [Key::Enter, Key::X]),
-            ("cancel", [Key::Escape, Key::Backspace]),
-        ] {
-            if !project.settings.bindings.contains_key(name) {
-                map_action(name, &|key| keys.contains(&key));
-            }
-        }
-        for (action, keys) in &project.settings.bindings {
-            map_action(action, &|key| {
-                keys.iter()
-                    .any(|binding| binding.eq_ignore_ascii_case(key.name()))
-            });
-        }
-        focus_loss.is_some()
-    });
-    (held, pressed, reset_pending)
+            .flatten()
+            .cloned()
+            .collect();
+        let held = input
+            .keys_down
+            .iter()
+            .filter_map(|key| bindings.get(key))
+            .flatten()
+            .cloned()
+            .collect();
+        (held, pressed, focus_loss.is_some())
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiled_bindings_preserve_defaults_and_case_insensitive_overrides() {
+        let mut project = Project::default();
+        project.settings.bindings = BTreeMap::from([
+            ("left".into(), vec!["sPaCe".into()]),
+            ("jump".into(), vec!["Space".into(), "unknown".into()]),
+            ("cancel".into(), vec![]),
+        ]);
+        let bindings = compile_bindings(&project);
+        assert_eq!(
+            bindings[&Key::Space],
+            Input::from(["fire".into(), "jump".into(), "left".into()])
+        );
+        assert_eq!(bindings[&Key::ArrowRight], Input::from(["right".into()]));
+        for key in [Key::A, Key::ArrowLeft, Key::Escape, Key::Backspace] {
+            assert!(!bindings.contains_key(&key));
+        }
+    }
 
     #[test]
     fn play_drops_buffered_input_when_the_window_loses_focus() {

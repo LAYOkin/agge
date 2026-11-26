@@ -63,6 +63,23 @@ fn cinder_suite_runs_with_isolated_state_and_renders_its_hud() {
 }
 
 #[test]
+fn captures_preserve_background_color_under_low_opacity_objects() {
+    let project = Project::parse(
+        r#"agge/1 {"size":[16,16]}
+room main {"bg":[0,0,255,1],"instances":[["overlay","overlay",0,0]]}
+object overlay {"size":[8,8],"color":[255,0,0,1]}
+"#,
+    )
+    .unwrap();
+    let spec = serde_json::from_str(r#"{"ticks":0}"#).unwrap();
+    let (world, _) = replay(project, &spec).unwrap();
+    let png = capture(&world, &Media::default(), [7, 7, 2, 1]).unwrap();
+    let image = image::load_from_memory(&png).unwrap().into_rgba8();
+    assert_eq!(image.get_pixel(0, 0).0, [127, 0, 127, 2]);
+    assert_eq!(image.get_pixel(1, 0).0, [0, 0, 255, 1]);
+}
+
+#[test]
 fn top_down_order_sorts_feet_within_depth_and_keeps_layer_precedence() {
     let project = Project::parse(r#"agge/1 {"size":[64,64]}
 room main {"y_sort":true,"instances":[["front","red",8,14],["high","blue",8,10],["back","green",8,10]]}

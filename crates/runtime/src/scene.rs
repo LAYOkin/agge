@@ -355,16 +355,19 @@ pub fn capture(world: &World, media: &Media, area: [u32; 4]) -> Result<Vec<u8>> 
 }
 
 fn blend(dest: &mut Color, src: Color) {
-    let sa = src[3] as u32;
-    let da = dest[3] as u32 * (255 - sa) / 255;
-    let alpha = sa + da;
+    let source_alpha = u32::from(src[3]);
+    // Keep both weights on the same scale until the final division.
+    let source_weight = source_alpha * 255;
+    let dest_weight = u32::from(dest[3]) * (255 - source_alpha);
+    let alpha = source_weight + dest_weight;
     if alpha == 0 {
         return;
     }
     for i in 0..3 {
-        dest[i] = ((dest[i] as u32 * da + src[i] as u32 * sa) / alpha) as u8;
+        dest[i] =
+            ((u32::from(dest[i]) * dest_weight + u32::from(src[i]) * source_weight) / alpha) as u8;
     }
-    dest[3] = alpha as u8;
+    dest[3] = ((alpha + 127) / 255) as u8;
 }
 
 fn raster(buffer: &mut RgbaImage, view: Bounds, draw: Draw<'_>, media: &Media, project: &Project) {

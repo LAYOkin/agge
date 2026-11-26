@@ -109,6 +109,26 @@ object blue {"size":[8,8],"color":[20,70,210,255],"depth":1}
 }
 
 #[test]
+fn placement_picking_uses_ellipse_coverage_and_sprite_bounds() {
+    let project = Project::parse(
+        r#"agge/1 {"size":[64,64]}
+room main {"instances":[["back","rect",8,8],["circle","oval",8,8],["art","sprite_oval",32,8]]}
+object rect {"size":[20,12]}
+object oval {"size":[20,12],"shape":"circle"}
+object sprite_oval {"size":[20,12],"shape":"circle","sprite":"sheet"}
+sprite sheet {"file":"art.png"}
+"#,
+    )
+    .unwrap();
+    let spec = serde_json::from_str(r#"{"ticks":0}"#).unwrap();
+    let (world, _) = replay(project, &spec).unwrap();
+    let pick = |point| pick_placement(world.project(), world.room(), point);
+    assert_eq!(pick([8.5, 8.5]), Some("back"));
+    assert_eq!(pick([18., 14.]), Some("circle"));
+    assert_eq!(pick([32.5, 8.5]), Some("art"));
+}
+
+#[test]
 fn impact_handlers_receive_signed_speed_in_axis_order() {
     let project = Project::parse(
         r#"agge/1 {"start":"test","hz":64}

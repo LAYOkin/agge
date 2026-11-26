@@ -111,16 +111,20 @@ pub fn edit_scene<'a>(
         .collect::<Vec<_>>();
     sort_draws(&mut candidates, room.y_sort);
     for (_, object, bounds, _) in candidates {
-        let clip = object
-            .animation
-            .as_deref()
-            .and_then(|id| project.get(Kind::Animation, id));
-        let animation = match clip {
-            Some(Resource::Animation(clip)) => Some((clip, 0)),
-            _ => None,
-        };
-        object_draw(object, bounds, animation, draw);
+        draw(edit_object_draw(project, object, bounds));
     }
+}
+
+fn edit_object_draw<'a>(project: &'a Project, object: &'a Object, bounds: Bounds) -> Draw<'a> {
+    let clip = object
+        .animation
+        .as_deref()
+        .and_then(|id| project.get(Kind::Animation, id));
+    let animation = match clip {
+        Some(Resource::Animation(clip)) => Some((clip, 0)),
+        _ => None,
+    };
+    object_draw(object, bounds, animation)
 }
 
 fn room_placements<'project, 'room>(
@@ -139,11 +143,22 @@ fn room_placements<'project, 'room>(
         })
 }
 
-/// Pick the frontmost room placement whose bounds contain the point.
+/// Pick the frontmost room placement whose drawn shape contains the point.
 pub fn pick_placement<'a>(project: &Project, room: &'a Room, [x, y]: [f32; 2]) -> Option<&'a str> {
     room_placements(project, room)
-        .filter(|(_, _, bounds, _)| {
-            (bounds.left..bounds.right).contains(&x) && (bounds.top..bounds.bottom).contains(&y)
+        .filter(|(_, object, bounds, _)| {
+            if !(bounds.left..bounds.right).contains(&x)
+                || !(bounds.top..bounds.bottom).contains(&y)
+            {
+                return false;
+            }
+            if matches!(edit_object_draw(project, object, *bounds), Draw::Circle(..)) {
+                let u = (x - bounds.left) / (bounds.right - bounds.left);
+                let v = (y - bounds.top) / (bounds.bottom - bounds.top);
+                inside_ellipse(u, v)
+            } else {
+                true
+            }
         })
         .max_by(|a, b| draw_order(a, b, room.y_sort))
         .map(|(_, _, _, placement)| placement.0.as_str())
@@ -179,13 +194,12 @@ impl World {
             (!object.hidden && bounds.overlaps(view)).then_some((entity.id, object, bounds, entity))
         });
         let mut paint = |(_, object, bounds, entity)| {
-            object_draw(
+            draw(object_draw(
                 object,
                 bounds,
                 self.animation(entity)
                     .map(|(_, clip, elapsed)| (clip, elapsed)),
-                draw,
-            );
+            ));
         };
         if self.has_depth || self.room().y_sort {
             let mut ordered = candidates.collect::<Vec<_>>();
@@ -292,25 +306,18 @@ fn object_draw<'a>(
     object: &'a Object,
     bounds: Bounds,
     animation: Option<(&'a Animation, u64)>,
-    draw: &mut impl FnMut(Draw<'a>),
-) {
+) -> Draw<'a> {
     if let Some((anim, elapsed)) = animation
         && let Some(slot) = anim.slot(elapsed)
     {
-        draw(Draw::Sprite(
-            bounds,
-            &anim.sprite,
-            anim.frames[slot],
-            object.color,
-        ));
-        return;
+        return Draw::Sprite(bounds, &anim.sprite, anim.frames[slot], object.color);
     }
     if let Some(id) = &object.sprite {
-        draw(Draw::Sprite(bounds, id, 0, object.color));
+        Draw::Sprite(bounds, id, 0, object.color)
     } else if object.shape == Shape::Circle {
-        draw(Draw::Circle(bounds, object.color));
+        Draw::Circle(bounds, object.color)
     } else {
-        draw(Draw::Rect(bounds, object.color));
+        Draw::Rect(bounds, object.color)
     }
 }
 
@@ -391,6 +398,10 @@ fn blend(dest: &mut Color, src: Color) {
     dest[3] = ((alpha + 127) / 255) as u8;
 }
 
+fn inside_ellipse(u: f32, v: f32) -> bool {
+    (u - 0.5).powi(2) + (v - 0.5).powi(2) <= 0.25
+}
+
 fn raster(buffer: &mut RgbaImage, view: Bounds, draw: Draw<'_>, media: &Media, project: &Project) {
     let mut fill = |b: Bounds, color: &dyn Fn(f32, f32) -> Option<Color>| {
         let width = b.right - b.left;
@@ -417,9 +428,7 @@ fn raster(buffer: &mut RgbaImage, view: Bounds, draw: Draw<'_>, media: &Media, p
     };
     match draw {
         Draw::Rect(b, color) => fill(b, &|_, _| Some(color)),
-        Draw::Circle(b, color) => fill(b, &|u, v| {
-            ((u - 0.5).powi(2) + (v - 0.5).powi(2) <= 0.25).then_some(color)
-        }),
+        Draw::Circle(b, color) => fill(b, &|u, v| inside_ellipse(u, v).then_some(color)),
         Draw::Sprite(b, id, frame, tint) => {
             if let Some(([sx, sy, w, h], image)) = media.frame(project, id, frame) {
                 fill(b, &|u, v| {

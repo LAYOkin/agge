@@ -24,7 +24,7 @@ In a room's **Placements** list, select a placement and choose **Duplicate place
 
 With the tilemap editor, set the grid dimensions and cell size, create or select a palette character, and paint inside the canvas. Enable **Solid** for tiles that should block movement. Add the tilemap under the room's **Tilemap layers**. Use the room's lights, ambient darkness, and HUD label controls to finish the room.
 
-Use the mouse wheel to zoom at the pointer and drag with the middle mouse button to pan in the room and tilemap canvases. **Fit** restores the full view. Hold the primary button to paint a continuous stroke in the tilemap, then choose **Apply** to save it as one undoable change.
+Use the mouse wheel to zoom at the pointer and drag with the middle mouse button to pan in the room and tilemap canvases. **Fit** restores the full view. In the tilemap, right-click any tile to pick it up as the brush, or right-click an empty cell to select the eraser. Hold the primary button to paint a continuous stroke, then choose **Apply** to save it as one undoable change.
 
 For regularly spaced sprites, open **Slice grid**, set frame dimensions and the number of columns and rows, and generate the frames. Add an origin or spacing for sheets with margins or gutters. Select a rectangle on the full sheet to edit that frame or check it in **Frame preview**.
 

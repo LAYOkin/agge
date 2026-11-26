@@ -711,19 +711,30 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
     let w = map.rows.first().map_or(1, |row| row.len().clamp(1, 1024));
     let h = map.rows.len().clamp(1, 1024);
     ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("{} × {} · brush {}", w, h, work.tool.brush)).color(MUTED));
+        ui.label(RichText::new(format!("{} × {} · brush {}", w, h, work.tool.brush)).color(MUTED))
+            .on_hover_text("Right-click a tile to sample the brush.");
         work.tool.camera.toolbar(ui);
     });
     let view = work.tool.camera.show(ui, [w as u32, h as u32]);
     let response = &view.response;
+    let cell = response
+        .interact_pointer_pos()
+        .and_then(|p| view.cell(p, w, h));
+    if response.clicked_by(egui::PointerButton::Secondary)
+        && let Some([x, y]) = cell
+        && let Some(&byte) = map.rows.get(y).and_then(|row| row.as_bytes().get(x))
+        && byte.is_ascii()
+    {
+        let tile = char::from(byte);
+        if tile == '.' || map.tiles.contains_key(&tile) {
+            work.tool.brush = tile;
+        }
+    }
     let active = response.clicked_by(PRIMARY)
         || response.dragged_by(PRIMARY)
         || response.drag_stopped_by(PRIMARY);
     let brush = work.tool.brush;
-    if let Some(cell) = response
-        .interact_pointer_pos()
-        .and_then(|p| view.cell(p, w, h))
-        .filter(|_| active)
+    if let Some(cell) = cell.filter(|_| active)
         && (brush == '.' || map.tiles.contains_key(&brush))
     {
         let start = work

@@ -130,21 +130,23 @@ impl CollisionTiles {
             return delta;
         }
         let (first, last) = (column(swept.left), column(swept.right).min(self.width - 1));
+        if first > last {
+            return delta;
+        }
         for y in row(swept.top)..=row(swept.bottom).min(self.height - 1) {
             let start = y * self.width;
-            if first > last {
-                break;
-            }
             let (lo, hi) = (start + first, start + last);
-            for i in lo / 64..=hi / 64 {
+            let (first_word, last_word) = (lo / 64, hi / 64);
+            for (offset, &base) in self.occupied[first_word..=last_word].iter().enumerate() {
+                let i = first_word + offset;
                 let mut word = patch
                     .and_then(|patch| patch.blockers.get(&i))
                     .copied()
-                    .unwrap_or(self.occupied[i]);
-                if i == lo / 64 {
+                    .unwrap_or(base);
+                if i == first_word {
                     word &= u64::MAX << (lo % 64);
                 }
-                if i == hi / 64 {
+                if i == last_word {
                     word &= u64::MAX >> (63 - hi % 64);
                 }
                 while word != 0 {

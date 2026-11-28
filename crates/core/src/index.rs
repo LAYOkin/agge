@@ -387,6 +387,30 @@ impl Index {
                                 &format!("line/{}", reference.line),
                             );
                         }
+                        for cell in &program.tile_keys {
+                            if cell.symbol != '.'
+                                && let Some(Resource::Tilemap(map)) =
+                                    project.get(Kind::Tilemap, &cell.map)
+                            {
+                                let at = format!("line/{}", cell.line);
+                                if map.tiles.contains_key(&cell.symbol) {
+                                    index.edges.push(Edge {
+                                        from: key.clone(),
+                                        to: format!("tilemap/{}/tiles/{}", cell.map, cell.symbol),
+                                        at,
+                                    });
+                                } else {
+                                    index.error(
+                                        "script_tile_key",
+                                        &format!("{key}/{at}"),
+                                        format!(
+                                            "tilemap/{} has no palette key {:?}",
+                                            cell.map, cell.symbol
+                                        ),
+                                    );
+                                }
+                            }
+                        }
                         let mut globals = BTreeSet::new();
                         for access in &program.globals {
                             if globals.insert((access.line, &access.name)) {

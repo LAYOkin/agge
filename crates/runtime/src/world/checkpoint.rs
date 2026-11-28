@@ -1,5 +1,6 @@
 use super::{
     ActorEffects, CompiledGame, ENTITY_LIMIT, Entity, Input, PARTICLE_LIMIT, Spark, World, bounded,
+    tiles::SavedTiles,
 };
 use agge_core::{
     Kind, Project, Resource, Result, clamp_view_origin, fail, store::write_atomic, valid_id,
@@ -31,6 +32,8 @@ pub struct Checkpoint {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     next_room: Option<String>,
     globals: BTreeMap<String, f32>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    tiles: SavedTiles,
     entities: Vec<SavedActor>,
     particles: Vec<Spark>,
     held: Input,
@@ -133,6 +136,7 @@ impl World {
             camera: self.camera.origin,
             next_room: self.next_room.clone(),
             globals: self.globals.clone(),
+            tiles: self.save_tiles(),
             entities: self
                 .entities
                 .values()
@@ -240,6 +244,7 @@ impl CompiledGame {
         world.input.clone_from(&world.previous);
         world.pointer = save.pointer;
         world.globals = save.globals;
+        world.restore_tiles(save.tiles)?;
         let (mut last_id, mut placements) = (0, BTreeSet::new());
         for actor in save.entities {
             if actor.id <= last_id

@@ -1197,6 +1197,10 @@ impl Workbench {
                             state.entities.len(),
                             state.particles
                         ));
+                        let changed_tiles = play.world().changed_tile_count();
+                        if changed_tiles != 0 {
+                            ui.monospace(format!("{changed_tiles} changed tiles"));
+                        }
                         ui.checkbox(&mut self.play_colliders, "Colliders")
                             .on_hover_text("Show collision geometry in the current camera view.");
                         if let Some(replay) = play.playback() {

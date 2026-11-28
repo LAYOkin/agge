@@ -22,7 +22,7 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 | `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `asset`, `outline`, `refs`, `session`, `read`, or `schema` |
 | `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops,preview?,verify?}` |
 | `agge_check` | `agge check PROJECT` | Empty object |
-| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,pointer?,expect?,sample?,watch?,select?,crop?,base?,from?}` |
+| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,pointer?,expect?,sample?,watch?,select?,tiles?,crop?,base?,from?}` |
 | `agge_history` | `agge undo` or `agge redo` | `{redo,base?}` |
 | `agge_knowledge` | `agge knowledge PROJECT JSON` | `{op,key?,value?}` |
 | `agge_art` | `agge art PROJECT JSON OUTPUT.png` | `{pixel,frames?,layer?,area?,scale?,columns?,compare?,base?,ops?}` |
@@ -92,6 +92,8 @@ Persist small structured project facts with `{"op":"put","key":"controls","value
 Input spans are inclusive, start at tick 1, and use `[first,last,action]`. Assertions and samples may read tick 0 after create events. Fields are `room`, `particles`, `camera/x`, `camera/y`, `grounded/placement_id`, `count/object_id`, `global/name`, and `entity/placement_id/property`. `grounded` returns `1` or `0`. Entity properties include position, velocity, object ID, and instance variables.
 
 Use `animation/placement` for the current clip ID and `frame/placement` for its sheet frame. `music` returns the current room's configured audio ID if present.
+
+Assert or watch a cell by glyph with `tile/terrain/4/2`, where the last two segments are column and row. Use `"tiles":{"map":"terrain","area":[3,1,4,3]}` on a single `agge_run` or `agge inspect` to read up to 4,096 live cells as compact rows. This includes script writes and can replace a PNG when checking level changes.
 
 Use `timer/placement/name` for remaining ticks and `expired/placement/name` to check when a timer is due. `expired` returns `1` only on the due tick and `0` otherwise. Replays read after the tick finishes, so a timer that a script canceled or rescheduled during that tick returns `0`.
 

@@ -83,6 +83,13 @@ pub struct GlobalUse {
     pub span: Range<usize>,
 }
 
+#[derive(Clone, Debug)]
+pub struct TileKey {
+    pub map: String,
+    pub symbol: char,
+    pub line: usize,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Program {
     pub events: BTreeMap<Event, Vec<Instruction>>,
@@ -90,6 +97,7 @@ pub struct Program {
     pub calls: Vec<Call>,
     pub references: Vec<Reference>,
     pub globals: Vec<GlobalUse>,
+    pub tile_keys: Vec<TileKey>,
     pub touch_targets: BTreeSet<String>,
     pub locations: BTreeMap<Event, EventLocation>,
     pub symbols: BTreeMap<String, Vec<(usize, Access)>>,
@@ -130,6 +138,7 @@ pub enum Statement {
     Move(Expr, Expr),
     Flip(Expr, Expr),
     Tint(Option<Box<[Expr; 4]>>),
+    Tile(String, Box<(Expr, Expr)>, char),
     Drop(Expr),
     Camera(Expr, Expr),
     Spawn(String, Expr, Expr),
@@ -236,6 +245,7 @@ pub enum Expr {
     Blocked(Box<Expr>, Box<Expr>),
     Random,
     View(ViewProperty),
+    Tile(String, Box<(Expr, Expr)>, Option<char>),
     Pointer(PointerProperty),
     Math(Math, Vec<Expr>),
     Choose(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -485,6 +495,24 @@ impl<'a> Parser<'a> {
         });
         Ok(id)
     }
+    fn tile_key(&mut self, map: &str) -> Result<char> {
+        let Some((Token::Quoted(text), _)) = self.take() else {
+            return Err(self.error("expected a quoted tile glyph"));
+        };
+        let [byte] = text.as_bytes() else {
+            return Err(self.error("tile glyph must be one printable ASCII character"));
+        };
+        if !byte.is_ascii_graphic() {
+            return Err(self.error("tile glyph must be one printable ASCII character"));
+        }
+        let symbol = char::from(*byte);
+        self.program.tile_keys.push(TileKey {
+            map: map.into(),
+            symbol,
+            line: self.line,
+        });
+        Ok(symbol)
+    }
     fn end(&self) -> Result<()> {
         if self.peek().is_none() {
             Ok(())
@@ -567,6 +595,20 @@ impl<'a> Parser<'a> {
                                 None
                             };
                             Expr::Touch(id, offset)
+                        }
+                        "tile_is" | "tile_solid"
+                            if matches!(self.peek(), Some(Token::Quoted(_))) =>
+                        {
+                            let id = self.reference(Kind::Tilemap, true)?;
+                            self.punct(',')?;
+                            let xy = Box::new(self.xy()?);
+                            let key = if word == "tile_is" {
+                                self.punct(',')?;
+                                Some(self.tile_key(&id)?)
+                            } else {
+                                None
+                            };
+                            Expr::Tile(id, xy, key)
                         }
                         "pointer" if matches!(self.peek(), Some(Token::Quoted(_))) => {
                             let Some((Token::Quoted(key), _)) = self.take() else {
@@ -757,6 +799,13 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
             "flip" => {
                 let (x, y) = p.xy()?;
                 Flip(x, y)
+            }
+            "tile" => {
+                let id = p.reference(Kind::Tilemap, false)?;
+                let cell = Box::new(p.xy()?);
+                p.punct(',')?;
+                let symbol = p.tile_key(&id)?;
+                Tile(id, cell, symbol)
             }
             "tint" => {
                 if p.peek().is_some() {

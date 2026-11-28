@@ -257,6 +257,7 @@ pub enum Scalar {
 enum Reading<'a> {
     Number(f32),
     Text(&'a str),
+    Glyph(char),
 }
 
 impl Reading<'_> {
@@ -264,6 +265,7 @@ impl Reading<'_> {
         match self {
             Self::Number(n) => Scalar::Number(n),
             Self::Text(text) => Scalar::Text(text.into()),
+            Self::Glyph(glyph) => Scalar::Text(glyph.into()),
         }
     }
 }
@@ -272,6 +274,7 @@ fn same_reading(old: Option<&Scalar>, value: Option<Reading<'_>>) -> bool {
     match (old, value) {
         (Some(Scalar::Number(old)), Some(Reading::Number(value))) => *old == value,
         (Some(Scalar::Text(old)), Some(Reading::Text(value))) => old == value,
+        (Some(Scalar::Text(old)), Some(Reading::Glyph(value))) => old.chars().eq([value]),
         (None, None) => true,
         _ => false,
     }
@@ -533,11 +536,20 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
 
 fn read<'a>(world: &'a World, field: &str) -> Option<Reading<'a>> {
     let mut parts = field.split('/');
-    let value = match (parts.next()?, parts.next(), parts.next(), parts.next()) {
+    let selector = (parts.next()?, parts.next(), parts.next(), parts.next());
+    if parts.next().is_some() {
+        return None;
+    }
+    let value = match selector {
+        ("tile", Some(map), Some(x), Some(y)) => {
+            let cell = [x.parse().ok()?, y.parse().ok()?];
+            return Some(Reading::Glyph(world.tile_layer(map)?.symbol(cell)?));
+        }
         ("room", None, None, None) => return Some(Reading::Text(world.room_id())),
         ("music", None, None, None) => return Some(Reading::Text(world.room().music.as_deref()?)),
         ("sound", Some(id), None, None) => world.queued_sound_count(id)? as f32,
         ("particles", None, None, None) => world.particles.len() as f32,
+        ("tiles_changed", None, None, None) => world.changed_tile_count() as f32,
         ("count", Some(object), None, None) => world.count(object) as f32,
         ("grounded", Some(placement), None, None) => {
             u8::from(world.grounded(world.placed(placement)?)) as f32

@@ -1,5 +1,5 @@
 use crate::{
-    Bounds, World,
+    Bounds, TileLayer, World,
     asset::{audio_info, png_decoder},
     pixel_sheet,
 };
@@ -22,7 +22,7 @@ pub enum Draw<'a> {
     Circle(Bounds, Color),
     Sprite(Bounds, &'a str, usize, Color, [bool; 2]),
     Backdrop(BackdropQuad<'a>),
-    TileLayer(&'a Tilemap, Bounds),
+    TileLayer(TileLayer<'a>, Bounds),
     Text([f32; 2], String, u32, Color),
 }
 
@@ -264,7 +264,9 @@ fn draw_order<T>(
 impl World {
     pub fn draw_scene<'a>(&'a self, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
         backdrops(self.room(), view, self.camera(), draw);
-        tiles(&self.project, self.room(), view, draw);
+        for layer in self.active_tile_layers() {
+            draw(Draw::TileLayer(layer, view));
+        }
         let candidates = self.entities.values().filter_map(|entity| {
             let object = self.object(&entity.object);
             let bounds = Bounds::new(entity.x, entity.y, object.size[0], object.size[1]);
@@ -313,7 +315,9 @@ impl World {
     /// Visit the current colliders in the runtime camera view.
     pub fn visit_colliders(&self, mut visit: impl FnMut(RoomCollider)) {
         let view = self.view();
-        tile_colliders(self.project(), self.room(), view, &mut visit);
+        for layer in self.active_tile_layers() {
+            visit_tile_colliders(layer, view, &mut visit);
+        }
         for entity in self.entities.values() {
             let object = self.object(&entity.object);
             visit_object_collider(object, entity.bounds(object), view, &mut visit);
@@ -393,12 +397,17 @@ fn tiles<'a>(project: &'a Project, room: &Room, view: Bounds, draw: &mut impl Fn
         let Some(Resource::Tilemap(map)) = project.get(Kind::Tilemap, id) else {
             continue;
         };
-        draw(Draw::TileLayer(map, view));
+        draw(Draw::TileLayer(TileLayer::authored(map), view));
     }
 }
 
 pub fn draw_tilemap<'a>(map: &'a Tilemap, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
-    visible_tiles(map, view, |bounds, tile| {
+    draw_tile_layer(TileLayer::authored(map), view, draw);
+}
+
+pub fn draw_tile_layer<'a>(layer: TileLayer<'a>, view: Bounds, draw: &mut impl FnMut(Draw<'a>)) {
+    let map = layer.map;
+    visible_tiles(layer, view, |bounds, tile| {
         match (map.atlas.as_deref(), tile.frame()) {
             (Some(atlas), Some(frame)) => {
                 draw(Draw::Sprite(bounds, atlas, frame, tile.color(), [false; 2]))
@@ -408,7 +417,8 @@ pub fn draw_tilemap<'a>(map: &'a Tilemap, view: Bounds, draw: &mut impl FnMut(Dr
     });
 }
 
-fn visible_tiles(map: &Tilemap, view: Bounds, mut visit: impl FnMut(Bounds, &Tile)) {
+fn visible_tiles(layer: TileLayer<'_>, view: Bounds, mut visit: impl FnMut(Bounds, &Tile)) {
+    let map = layer.map;
     let cell = map.cell.max(1) as f32;
     let [left, top] = map.at.map(|position| position as f32);
     if view.right <= left || view.bottom <= top {
@@ -421,9 +431,9 @@ fn visible_tiles(map: &Tilemap, view: Bounds, mut visit: impl FnMut(Bounds, &Til
     let y0 = row(view.top).floor() as usize;
     let y1 = (row(view.bottom).ceil() as usize).min(map.rows.len());
     for y in y0..y1 {
-        let text = map.rows[y].as_bytes();
-        if let Some(visible) = text.get(x0..x1.min(text.len())) {
-            for (i, &symbol) in visible.iter().enumerate() {
+        let end = x1.min(map.rows[y].len());
+        if x0 < end {
+            for (i, symbol) in layer.row(y, x0, end).enumerate() {
                 if let Some(tile) = map.tiles.get(&(symbol as char)) {
                     let bounds = Bounds::new(
                         left + (x0 + i) as f32 * cell,
@@ -470,13 +480,17 @@ fn tile_colliders(
 ) {
     for id in &room.maps {
         if let Some(Resource::Tilemap(map)) = project.get(Kind::Tilemap, id) {
-            visible_tiles(map, view, |bounds, tile| {
-                if tile.solid() {
-                    visit(RoomCollider::Solid(bounds));
-                }
-            });
+            visit_tile_colliders(TileLayer::authored(map), view, visit);
         }
     }
+}
+
+fn visit_tile_colliders(layer: TileLayer<'_>, view: Bounds, visit: &mut impl FnMut(RoomCollider)) {
+    visible_tiles(layer, view, |bounds, tile| {
+        if tile.solid() {
+            visit(RoomCollider::Solid(bounds));
+        }
+    });
 }
 
 fn visit_object_collider(
@@ -654,7 +668,7 @@ fn raster(buffer: &mut RgbaImage, view: Bounds, draw: Draw<'_>, media: &Media, p
             }
         }
         Draw::TileLayer(map, visible) => {
-            draw_tilemap(map, visible, &mut |tile| {
+            draw_tile_layer(map, visible, &mut |tile| {
                 raster(buffer, view, tile, media, project)
             });
         }

@@ -13,6 +13,12 @@ use std::borrow::Cow;
 const MAX_EVAL_DEPTH: u8 = 128;
 const MAX_TRACE_FRAMES: usize = 16;
 
+fn tile_indices(cell: [f32; 2]) -> Option<[usize; 2]> {
+    cell.iter()
+        .all(|&v| (0. ..=1023.).contains(&v) && v.fract() == 0.)
+        .then(|| cell.map(|v| v as usize))
+}
+
 #[derive(Clone, Copy)]
 struct Context<'a> {
     index: &'a Index,
@@ -166,6 +172,16 @@ impl World {
                 let x = self.eval(entity, context, x, 0)? != 0.;
                 let y = self.eval(entity, context, y, 0)? != 0.;
                 entity.effects.get_or_insert_with(Default::default).flip = Some([x, y]);
+            }
+            Statement::Tile(map, cell, symbol) => {
+                let cell = [
+                    self.eval(entity, context, &cell.0, 0)?,
+                    self.eval(entity, context, &cell.1, 0)?,
+                ];
+                let at = tile_indices(cell)
+                    .ok_or("tile coordinates must be whole cells from 0 to 1023")?;
+                self.set_tile(map, at, *symbol)
+                    .map_err(|error| ScriptError::new(error.to_string()))?;
             }
             Statement::Tint(channels) => {
                 if let Some(channels) = channels {
@@ -346,6 +362,13 @@ impl World {
                 flag(self.blocked(e, x, y))
             }
             Expr::Random => random(&mut self.rng),
+            Expr::Tile(map, cell, symbol) => {
+                let cell = [
+                    self.eval(e, context, &cell.0, depth + 1)?,
+                    self.eval(e, context, &cell.1, depth + 1)?,
+                ];
+                flag(tile_indices(cell).is_some_and(|at| self.meets_tile(map, at, *symbol)))
+            }
             Expr::Pointer(property) => self.pointer_property(*property),
             Expr::View(property) => match property {
                 ViewProperty::X => self.camera.origin[0],

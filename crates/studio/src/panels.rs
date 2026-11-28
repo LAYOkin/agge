@@ -983,7 +983,7 @@ fn map_canvas(ui: &mut Ui, work: &mut Workbench, map: &mut Tilemap) {
             scale,
             &work.media,
             project,
-            Draw::TileLayer(map, window),
+            Draw::TileLayer(agge_runtime::TileLayer::authored(map), window),
         );
     } else {
         atlas::palette_preview(

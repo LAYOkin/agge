@@ -759,6 +759,13 @@ pub enum SimulationMode<'a> {
     Checkpoint,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TileRegion {
+    map: String,
+    area: [usize; 4],
+}
+
 pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Result<Simulation> {
     if let SimulationMode::TestCase(selected) = mode {
         if args.get("cases").is_none() {
@@ -783,6 +790,8 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
         .remove("select")
         .map(serde_json::from_value)
         .transpose()?;
+    let tiles: Option<TileRegion> =
+        serde_json::from_value(fields.remove("tiles").unwrap_or(Value::Null))?;
     let area: Option<[u32; 4]> = fields
         .remove("crop")
         .map(serde_json::from_value)
@@ -794,7 +803,7 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
             .transpose()?
             .unwrap_or(false);
     if matches!(mode, SimulationMode::Test | SimulationMode::Checkpoint)
-        && (selection.is_some() || area.is_some())
+        && (selection.is_some() || area.is_some() || tiles.is_some())
     {
         return Err(fail("test accepts replay fields only"));
     }
@@ -825,6 +834,10 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
     if let Some(selection) = selection {
         result["state"] =
             json!(world.snapshot(selection.object.as_deref(), selection.placement.as_deref()));
+    }
+    if let Some(tiles) = tiles {
+        let data = world.tile_region(&tiles.map, tiles.area)?;
+        result["tiles"] = json!({"map":tiles.map,"area":tiles.area,"rows":data});
     }
     let area = area.or_else(|| {
         (mode == SimulationMode::Capture).then(|| {
@@ -899,7 +912,7 @@ fn guide(key: &str) -> Result<Value> {
             json!({"sprite":"ship","frames":[0,1,2],"fps":10,"holds":{"1":4},"mode":"ping_pong"})
         }
         "script" => {
-            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","flip x, y","tint [r, g, b, a]","drop ticks","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle[, x, y]","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\"[,dx,dy])","global(name)","pointer(\"x|y|world_x|world_y|active\")","grounded()","blocked(dx,dy)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
+            json!({"events":["create","step","hit_x","hit_y"],"example":"create:\n  set vx = 120\nhit_x:\n  set vx = -impact()","commands":["set name = value","global name = value","move dx, dy","flip x, y","tint [r, g, b, a]","drop ticks","tile map x, y, \"glyph\"","camera x, y","animate clip[, restart]","after name, ticks","spawn object x, y","sound audio","emit particle[, x, y]","goto room","destroy","if value / else / end","repeat count / end","fn name(parameters) = expression"],"builtins":["x","y","vx","vy","dt","tick","width","height","down(\"action\")","pressed(\"action\")","released(\"action\")","touch(\"object\"[,dx,dy])","global(name)","pointer(\"x|y|world_x|world_y|active\")","grounded()","blocked(dx,dy)","tile_is(\"map\",x,y,\"glyph\")","tile_solid(\"map\",x,y)","impact()","anim_done()","remaining(name)","expired(name)","rand()","abs(x)","floor(x)","ceil(x)","sin(x)","cos(x)","sqrt(x)","min(x,y)","max(x,y)","clamp(x,min,max)","choose(test,yes,no)","view(\"x\")","view(\"y\")","view(\"width\")","view(\"height\")"]})
         }
         "tilemap" => {
             json!({"cell":16,"at":[0,0],"atlas":"terrain","tiles":{"#":[[120,140,160,255],true],"a":[0],"b":[1,true]},"rows":["###","#a#","b##"]})
@@ -909,7 +922,7 @@ fn guide(key: &str) -> Result<Value> {
             json!({"count":12,"life":30,"speed":120,"radius":2,"color":[230,200,110,255],"gravity":80})
         }
         "replay" => {
-            json!({"ticks":20,"input":[[1,5,"right"]],"pointer":[[2,8,20,16]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"watch":{"fields":["room","global/score"],"at":[0,20],"limit":16},"fields":["room","particles","camera/x","camera/y","pointer/active","pointer/x","pointer/y","pointer/world_x","pointer/world_y","grounded/placement","animation/placement","frame/placement","timer/placement/name","expired/placement/name","music","sound/audio","count/object","global/name","entity/placement/property"]})
+            json!({"ticks":20,"input":[[1,5,"right"]],"pointer":[[2,8,20,16]],"expect":[{"at":20,"field":"entity/hero/x","is":48,"tolerance":0.01}],"sample":[[0,"entity/hero/x"]],"watch":{"fields":["room","global/score"],"at":[0,20],"limit":16},"fields":["room","particles","tile/map/x/y","tiles_changed","camera/x","camera/y","pointer/active","pointer/x","pointer/y","pointer/world_x","pointer/world_y","grounded/placement","animation/placement","frame/placement","timer/placement/name","expired/placement/name","music","sound/audio","count/object","global/name","entity/placement/property"]})
         }
         "suite" => {
             json!({"cases":{"arrival":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}},"detail":false})

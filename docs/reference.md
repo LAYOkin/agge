@@ -56,6 +56,10 @@ Backdrops draw in array order, before tilemaps. Each backdrop names a `sprite`, 
 
 Flat tiles use `[rgba,solid?]`. Atlas tiles use `[frame,solid?,tint?]`, with a zero-based frame in the tilemap's shared sprite. A plain sprite with no frame rectangles has one frame. Atlas tiles default to white tint and non-solid collision. The collision flag fills the whole cell independently of the PNG's transparency. A palette can mix both kinds.
 
+In a script, `tile terrain 4, 2, "."` clears a cell on the current room's `terrain` map. Pass any palette glyph to replace it. The write updates collision and rendering immediately, including later movement in the same event. Coordinates are zero-based integers. A write outside the active map faults at that statement. `tile_is("terrain", 4, 2, "#")` checks the glyph and `tile_solid("terrain", 4, 2)` checks its collision flag. Probes outside the map return 0.
+
+Edits persist when revisiting a room and are included in runtime checkpoints. Rooms using the same map asset have independent edits. Reset a cell by writing its authored glyph. Up to 65,536 changed cells may be active across a world.
+
 ```text
 sprite terrain {"file":"art/terrain.png","frames":[[0,0,16,16],[16,0,16,16]]}
 tilemap floor {"cell":16,"atlas":"terrain","tiles":{"#":[0,true],"+":[1],"w":[[36,70,100,180]]},"rows":["#.+w"]}
@@ -84,6 +88,7 @@ step:
 | `set name = expr` | Set an instance variable or one of `x`, `y`, `vx`, and `vy` |
 | `global name = expr` | Set a global shared across instances and rooms |
 | `move dx, dy` | Sweep a collider by the specified pixel offsets |
+| `tile map x, y, "glyph"` | Change one tile cell in the active room |
 | `camera x, y` | Set the viewport's top-left world coordinate for the end of this tick |
 | `spawn object x, y` | Queue creation of an instance at a pixel position |
 | `emit particle` or `emit particle, x, y` | Emit a burst at the instance origin or the specified world position |

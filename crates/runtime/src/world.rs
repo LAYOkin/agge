@@ -2,6 +2,7 @@ mod camera;
 mod checkpoint;
 mod spatial;
 mod tiles;
+pub use tiles::TileLayer;
 mod vm;
 
 use agge_core::{
@@ -340,7 +341,9 @@ pub struct World {
     collision_tiles: Arc<BTreeMap<String, Arc<tiles::CollisionTiles>>>,
     pub(crate) has_depth: bool,
     step_ids: Vec<u64>,
-    room_tiles: Vec<Arc<tiles::CollisionTiles>>,
+    room_tiles: Vec<(String, Arc<tiles::CollisionTiles>)>,
+    tile_changes: tiles::TileChanges,
+    tile_change_count: usize,
     members: BTreeMap<String, BTreeSet<u64>>,
     placements: BTreeMap<String, u64>,
     camera: camera::ViewCamera,
@@ -397,6 +400,8 @@ impl World {
             step_ids: Vec::new(),
             collision_tiles: Arc::clone(&game.collision_tiles),
             room_tiles: Vec::new(),
+            tile_changes: BTreeMap::new(),
+            tile_change_count: 0,
             members: BTreeMap::new(),
             placements: BTreeMap::new(),
             camera: camera::ViewCamera::default(),
@@ -638,7 +643,7 @@ impl World {
             .room()
             .maps
             .iter()
-            .filter_map(|id| self.collision_tiles.get(id).cloned())
+            .filter_map(|id| Some((id.clone(), self.collision_tiles.get(id)?.clone())))
             .collect();
     }
 
@@ -800,8 +805,15 @@ impl World {
             }
         });
         if mask & agge_core::TILE_LAYER != 0 {
-            for map in &self.room_tiles {
-                move_by = map.clamp(bounds, swept, axis, move_by);
+            let changed = self.tile_changes.get(&self.room);
+            for (id, map) in &self.room_tiles {
+                move_by = map.clamp(
+                    changed.and_then(|room| room.get(id)),
+                    bounds,
+                    swept,
+                    axis,
+                    move_by,
+                );
             }
         }
         move_by

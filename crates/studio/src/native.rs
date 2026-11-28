@@ -1,9 +1,7 @@
-use agge_core::{
-    Color, Kind, Light, Project, Resource, Result, Tilemap, fail, read_asset, store::Store,
-};
+use agge_core::{Color, Kind, Light, Project, Resource, Result, fail, read_asset, store::Store};
 use agge_runtime::{
     Bounds, Checkpoint, CompiledGame, Draw, Input, Media, Replay, ReplayPlayback, ReplayRecorder,
-    RoomCollider, World, draw_tilemap, shade_lights,
+    RoomCollider, TileLayer, World, draw_tile_layer, shade_lights,
 };
 use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, Stroke, StrokeKind, TextureHandle,
@@ -976,18 +974,19 @@ impl Canvas {
         painter: &Painter,
         media: &Media,
         project: &Project,
-        map: &Tilemap,
+        layer: TileLayer<'_>,
         view: Bounds,
         screen_rect: impl Fn(Bounds) -> Rect,
     ) {
-        let atlas = map
+        let atlas = layer
+            .map
             .atlas
             .as_deref()
             .and_then(|id| self.sprite_texture(painter.ctx(), media, id));
         let mut flat = egui::Mesh::default();
         let mut images = atlas.map(egui::Mesh::with_texture);
         let mut regions = BTreeMap::new();
-        draw_tilemap(map, view, &mut |tile| match tile {
+        draw_tile_layer(layer, view, &mut |tile| match tile {
             Draw::Rect(bounds, tint) => flat.add_colored_rect(screen_rect(bounds), color(tint)),
             Draw::Sprite(bounds, id, frame, tint, _) => {
                 let uv = regions.entry(frame).or_insert_with(|| {

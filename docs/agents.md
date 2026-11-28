@@ -51,6 +51,8 @@ Use `{"schema":"edits"}` for the edit catalog or `{"schema":"edit/grid"}` for on
 
 Use `{"refs":"global/score"}` to find script lines and HUD fields that use a global. `{"op":"rename_global","id":"score","to":"points"}` updates its reads, writes, labels, and meters in one transaction. AGGE rejects a destination name already in use. Update `global/score` selectors in external replay files when renaming a global.
 
+If the global is declared in the progress schema, `rename_global` also updates that schema, increments its version, and adds an old-to-new migration. Use `{"schema":"progress"}` for the project and replay forms.
+
 `{"op":"placement","room":"main","id":"hero","to":"pilot","at":[48,32]}` renames and moves one placement and preserves a camera reference to it. Use `object` to retarget the placement or `remove:true` alone to delete it and clear its camera reference. Update any external replay selectors that use a renamed placement ID.
 
 Use `{"op":"script_event","id":"drive","event":"step","body":"  move 120 * dt, 0"}` to replace an event body or add an absent event to an existing script. An empty string keeps the header and clears the executable body. Explicit `null` removes the event. The body must omit event headers. The edit preserves the existing header and trailing comments outside the executable block.
@@ -129,6 +131,8 @@ CLI and MCP reports include the first eight failed assertions and return the rem
 Pass a case name after the suite on the CLI to run only that case, for example `agge test PROJECT @replay.json startup`.
 
 Save a successful replay prefix with `agge checkpoint PROJECT @prefix.json project-folder/branch.aggesave`. Then use `{"from":"branch.aggesave","ticks":30,"sample":[[0,"entity/hero/x"],[30,"entity/hero/x"]]}` in a single test or `agge_run`. `from` is relative to the project directory. Replay inputs and observations count ticks from the checkpoint, and the world inspector shows the absolute tick. Use the same canonical project source. AGGE preserves input edges, timers, animations, camera, entities, globals, and both random streams.
+
+To test a shipping update, pass `"progress":{"id":"quarry","version":1,"values":{"coins":12}}` inside a replay or suite case. Assert migrated globals at tick 0 and watch `progress_saved` for calls to `save`. In a single `agge_run` or `agge inspect`, use `"progress_out":true` to return the final tick's scheduled save or null. `agge progress PROJECT @replay.json NEW.json` writes that save to a new file.
 
 
 

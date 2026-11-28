@@ -1,10 +1,11 @@
 use agge_core::{Result, fail, valid_id};
 use std::{env, path::PathBuf, process::ExitCode};
 
-const HELP: &str = "Usage: agge-player [--room ROOM] [--save FILE] [PROJECT]
+const HELP: &str = "Usage: agge-player [--room ROOM] [--save FILE] [--progress FILE] [PROJECT]
 
 With no project path, load game.agge beside the player.
---save enables F6 to save and F9 to load.";
+--save enables F6 to save and F9 to load an exact checkpoint.
+--progress chooses the progress file for a game with a progress schema.";
 
 fn main() -> ExitCode {
     if let Err(error) = run() {
@@ -16,7 +17,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<()> {
     let mut args = env::args_os().skip(1);
-    let (mut file, mut room, mut save) = (None, None, None);
+    let (mut file, mut room, mut save, mut progress) = (None, None, None, None);
     let mut options = true;
     while let Some(arg) = args.next() {
         match arg.to_str().filter(|_| options) {
@@ -40,6 +41,13 @@ fn run() -> Result<()> {
                 ));
             }
             Some("--save") => return Err(fail("--save can only be given once")),
+            Some("--progress") if progress.is_none() => {
+                progress = Some(PathBuf::from(
+                    args.next()
+                        .ok_or_else(|| fail("--progress requires a path"))?,
+                ));
+            }
+            Some("--progress") => return Err(fail("--progress can only be given once")),
             _ if options && arg.as_encoded_bytes().starts_with(b"-") => {
                 return Err(fail(format!(
                     "unknown option {}; see --help",
@@ -54,5 +62,5 @@ fn run() -> Result<()> {
         Some(path) => path,
         None => env::current_exe()?.with_file_name("game.agge"),
     };
-    agge_studio::run_player_with_save(file, room.as_deref(), save)
+    agge_studio::run_player_with_files(file, room.as_deref(), save, progress)
 }

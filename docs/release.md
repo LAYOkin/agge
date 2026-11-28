@@ -1,6 +1,6 @@
 # Development status and release criteria
 
-AGGE is pre-alpha. The workspace uses `0.0.0-prealpha` for development builds. Project formats, APIs, and save compatibility may change during development. The source includes Studio, the standalone desktop player, the CLI and MCP server, nine example projects, and a portable archive workflow.
+AGGE is pre-alpha. The workspace uses `0.0.0-prealpha` for development builds. Project formats, APIs, and save compatibility may change during development. The source includes Studio, the standalone desktop player, the CLI and MCP server, ten example projects, and a portable archive workflow.
 
 ## Criteria for the first public release
 
@@ -19,8 +19,8 @@ The portable workflow uploads development artifacts. Native graphics and audio n
 
 ## Engine boundaries
 
-Scripts provide AABB movement and platform collision, authored tilemaps, room changes, and lightweight HUDs. Mutable runtime tilemaps, controller input and rebinding in shipped games, a general UI layout and text-input system, arbitrary user shaders, and physics joints are open engine work. Web and mobile builds are outside the desktop target.
+Scripts provide AABB movement and platform collision, mutable room tilemaps, room changes, and lightweight HUDs. Controller input and rebinding in shipped games, a general UI layout and text-input system, arbitrary user shaders, and physics joints are open engine work. Web and mobile builds are outside the desktop target.
 
-Checkpoints restore deterministic runtime state for the same canonical source. Save migrations, user-managed save slots, and serialization of native audio playback position remain open. Live reload supports compatible edits and runtime rebinds. Changes to the current room's authored placements, tick rate, or viewport size require a restart.
+Checkpoints restore deterministic runtime state for the same canonical source. Versioned portable progress migrates declared globals across shipped builds. Player-facing slot management and serialization of native audio playback position remain open. Live reload supports compatible edits and runtime rebinds. Changes to the current room's authored placements, the progress schema, tick rate, or viewport size require a restart.
 
 Native pixel art includes layered poses, shared palettes, components, symmetry, regional edits, generated tracks, and timed clip playback. In-game examples and exact captures demonstrate these tools. A blind artistic-quality comparison across several asset briefs is still outstanding.

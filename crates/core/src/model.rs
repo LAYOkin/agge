@@ -79,6 +79,8 @@ pub struct Settings {
     pub seed: u64,
     #[serde(skip_serializing_if = "no")]
     pub pointer: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<crate::ProgressSchema>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub bindings: BTreeMap<String, Vec<String>>,
 }
@@ -91,6 +93,7 @@ impl Default for Settings {
             hz: 60,
             seed: 1,
             pointer: false,
+            progress: None,
             bindings: BTreeMap::new(),
         }
     }

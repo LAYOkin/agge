@@ -34,6 +34,8 @@ pub struct Checkpoint {
     globals: BTreeMap<String, f32>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tiles: SavedTiles,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    progress_requested: bool,
     entities: Vec<SavedActor>,
     particles: Vec<Spark>,
     held: Input,
@@ -137,6 +139,7 @@ impl World {
             next_room: self.next_room.clone(),
             globals: self.globals.clone(),
             tiles: self.save_tiles(),
+            progress_requested: self.progress_requested,
             entities: self
                 .entities
                 .values()
@@ -188,6 +191,9 @@ impl CompiledGame {
         if current.hz != settings.hz || current.size != settings.size {
             return Err(fail("restart after changing tick rate or viewport size"));
         }
+        if current.progress != settings.progress {
+            return Err(fail("restart after changing the progress schema"));
+        }
         let Some(Resource::Room(room)) = self.project.get(Kind::Room, old.room_id()) else {
             return Err(fail("restart after removing the live room"));
         };
@@ -211,6 +217,7 @@ impl CompiledGame {
             || save.held.len() > 4096
             || !save.held.iter().all(|key| valid_id(key))
             || !valid_vars(&save.globals)
+            || (save.progress_requested && self.project.settings.progress.is_none())
             || !save.camera.iter().all(|v| v.is_finite())
             || save.pointer.is_some_and(|[x, y]| {
                 let [w, h] = self.project.settings.size;
@@ -244,6 +251,7 @@ impl CompiledGame {
         world.input.clone_from(&world.previous);
         world.pointer = save.pointer;
         world.globals = save.globals;
+        world.progress_requested = save.progress_requested;
         world.restore_tiles(save.tiles)?;
         let (mut last_id, mut placements) = (0, BTreeSet::new());
         for actor in save.entities {

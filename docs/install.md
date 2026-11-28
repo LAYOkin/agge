@@ -44,6 +44,8 @@ To preview a particular room without editing the launch room, pass its ID to the
 
 Launch with `agge-player --save path/to/session.aggesave PROJECT` to enable F6 quicksave and F9 restore. The player validates the save against the canonical project source before restoring it. Game source and assets stay in their original files.
 
+Games with a progress schema load and save player data under `agge/<game-id>/progress.json` in the user's local data directory. This is `LOCALAPPDATA` on Windows, `~/Library/Application Support` on macOS, and `XDG_DATA_HOME` or `~/.local/share` on Linux. Use `agge-player --progress path/to/test.json PROJECT` for a separate slot. The player writes progress only when the game's script requests a save.
+
 ## Make a portable build
 
 After an optimized build, run `python tools/package_release.py --label dev` with Python 3.11 or newer. The script puts the archive and checksum in `target/dist`. It checks every bundled project and replay, then exports and retests Cinder Circuit with the staged player. CI runs this flow per platform for packaging changes, version tags, and on demand.

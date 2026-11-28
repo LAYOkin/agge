@@ -1,5 +1,5 @@
 use crate::{CompiledGame, Fault, Input, World};
-use agge_core::{Project, Result, fail, script::PointerProperty, valid_id};
+use agge_core::{Progress, Project, Result, fail, script::PointerProperty, valid_id};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
@@ -26,6 +26,8 @@ pub struct Replay {
     pub room: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<Progress>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub input: Vec<InputSpan>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -174,6 +176,7 @@ impl ReplayRecorder {
                 ticks: 0,
                 room: Some(room.into()),
                 seed: None,
+                progress: None,
                 input: vec![],
                 pointer: vec![],
                 expect: vec![],
@@ -343,14 +346,20 @@ pub struct ReplayPlayback<S> {
 impl<S: Borrow<Replay>> ReplayPlayback<S> {
     pub fn new(game: &CompiledGame, spec: S) -> Result<Self> {
         Self::start(spec, |replay| {
-            game.preview_seeded(replay.room.as_deref(), replay.seed)
+            game.preview_with_progress(
+                replay.room.as_deref(),
+                replay.seed,
+                replay.progress.as_ref(),
+            )
         })
     }
 
     pub fn resume(world: World, spec: S) -> Result<Self> {
         let replay = spec.borrow();
-        if replay.room.is_some() || replay.seed.is_some() {
-            return Err(fail("resumed replay already has a room and random state"));
+        if replay.room.is_some() || replay.seed.is_some() || replay.progress.is_some() {
+            return Err(fail(
+                "resumed replay already has a room, random state, and progress",
+            ));
         }
         Self::start(spec, |_| Ok(world))
     }
@@ -549,6 +558,7 @@ fn read<'a>(world: &'a World, field: &str) -> Option<Reading<'a>> {
         ("music", None, None, None) => return Some(Reading::Text(world.room().music.as_deref()?)),
         ("sound", Some(id), None, None) => world.queued_sound_count(id)? as f32,
         ("particles", None, None, None) => world.particles.len() as f32,
+        ("progress_saved", None, None, None) => u8::from(world.progress_requested()) as f32,
         ("tiles_changed", None, None, None) => world.changed_tile_count() as f32,
         ("count", Some(object), None, None) => world.count(object) as f32,
         ("grounded", Some(placement), None, None) => {

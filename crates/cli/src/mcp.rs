@@ -148,7 +148,7 @@ fn tool_list() -> Vec<Value> {
         tool(
             NAMES[3],
             "Replay ticks with input, assertions, watches, scoped state, tile rows or a crop. Or run named replay cases with one summary.",
-            json!({"ticks":number,"from":text,"room":text,"seed":{"type":"integer","minimum":0},"input":array,"pointer":array,"expect":array,"sample":{"type":["array","object"]},"watch":{"type":"object"},"select":{"type":"object"},"tiles":{"type":"object","properties":{"map":text,"area":array},"required":["map","area"],"additionalProperties":false},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
+            json!({"ticks":number,"from":text,"room":text,"seed":{"type":"integer","minimum":0},"input":array,"pointer":array,"progress":{"type":"object"},"progress_out":boolean,"expect":array,"sample":{"type":["array","object"]},"watch":{"type":"object"},"select":{"type":"object"},"tiles":{"type":"object","properties":{"map":text,"area":array},"required":["map","area"],"additionalProperties":false},"crop":array,"cases":{"type":"object"},"detail":boolean,"base":text}),
             json!([]),
         ),
         tool(

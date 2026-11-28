@@ -93,6 +93,7 @@ step:
 | `spawn object x, y` | Queue creation of an instance at a pixel position |
 | `emit particle` or `emit particle, x, y` | Emit a burst at the instance origin or the specified world position |
 | `sound audio` | Queue a clip for native playback |
+| `save` | Request a portable progress save at the end of a successful tick |
 | `animate clip` or `animate clip, restart` | Switch the instance's clip, restarting when `restart` is nonzero |
 | `flip x, y` | Mirror the instance sprite on each axis whose expression is nonzero |
 | `tint r, g, b, a` or `tint` | Set instance draw color with channels rounded and clamped to 0–255, or restore the authored color |
@@ -110,6 +111,18 @@ Read-only variables are `dt`, `tick`, `width`, and `height`. Width and height ar
 `released("action")` returns `1` on the first simulation tick after the action stops being held and `0` otherwise. Use it to commit an action after a hold, such as launching a charged shot.
 
 Enable desktop pointer input with `"pointer":true` in the project header or in Studio's Project dialog. `pointer("active")` is 1 inside the game viewport. `pointer("x")` and `pointer("y")` read logical pixel coordinates. Use `world_x` and `world_y` to include the current camera offset. Coordinates return -1 outside the viewport. Button actions are `mouse_left`, `mouse_right`, and `mouse_middle`. Read them with the same `pressed`, `down`, and `released` functions used for keyboard actions.
+
+### Player progress
+
+Declare persistent numeric globals in the project header. The game's stable progress ID chooses the native save directory. The schema version identifies the shape of the saved data.
+
+```text
+agge/1 {"progress":{"id":"quarry","version":2,"globals":{"stars":0,"stage":1},"migrations":{"1":{"rename":{"coins":"stars"}}}}}
+```
+
+The player loads progress before the launch room's create events. Use those globals to select an unlocked level or restore settings. A script's `save` captures the declared values at the end of a successful tick, including changes from later events. Keep transient state in undeclared globals or instance variables. Exact runtime checkpoints capture the entire live world for the same source revision.
+
+Increase the schema version when changing persistent keys. Each migration key names the version it upgrades by one. `rename` maps previous globals to the next names and `remove` lists retired keys. Renames apply simultaneously. New keys use their declared defaults. The player reports invalid files, incomplete migration chains, and newer versions without replacing the saved data.
 
 ### Reuse script expressions
 

@@ -6,7 +6,7 @@ pub use tiles::TileLayer;
 mod vm;
 
 use agge_core::{
-    Animation, Index, Kind, Object, Project, Resource, Result, Room, fail, script::Event,
+    Animation, Index, Kind, Object, Progress, Project, Resource, Result, Room, fail, script::Event,
 };
 pub use checkpoint::Checkpoint;
 use serde::{Deserialize, Serialize};
@@ -311,7 +311,7 @@ impl CompiledGame {
     }
 
     pub fn preview(&self, room: Option<&str>) -> Result<World> {
-        self.preview_seeded(room, None)
+        self.preview_with_progress(room, None, None)
     }
 
     pub fn index(&self) -> &Index {
@@ -322,8 +322,19 @@ impl CompiledGame {
         Arc::clone(&self.index)
     }
 
-    pub(crate) fn preview_seeded(&self, room: Option<&str>, seed: Option<u64>) -> Result<World> {
+    /// Populate declared globals before the launch room's create handlers run.
+    pub fn preview_with_progress(
+        &self,
+        room: Option<&str>,
+        seed: Option<u64>,
+        progress: Option<&Progress>,
+    ) -> Result<World> {
         let mut world = World::prepare(self, room, seed)?;
+        if let Some(schema) = &self.project.settings.progress {
+            world.globals = schema.initial_values(progress)?;
+        } else if progress.is_some() {
+            return Err(fail("project has no progress schema"));
+        }
         world.fault = world.enter_room().err();
         Ok(world)
     }
@@ -355,6 +366,7 @@ pub struct World {
     input: Input,
     previous: Input,
     pointer: Option<[u32; 2]>,
+    progress_requested: bool,
     queued: VecDeque<Queued>,
     next_room: Option<String>,
     rng: u64,
@@ -417,6 +429,7 @@ impl World {
             input: Input::new(),
             previous: Input::new(),
             pointer: None,
+            progress_requested: false,
             queued: VecDeque::new(),
             next_room: None,
             rng: seed.max(1),
@@ -430,6 +443,16 @@ impl World {
     }
     pub fn project(&self) -> &Project {
         &self.project
+    }
+    pub fn progress_requested(&self) -> bool {
+        self.progress_requested && self.fault.is_none()
+    }
+    pub fn progress_to_save(&self) -> Option<Progress> {
+        if !self.progress_requested() {
+            return None;
+        }
+        let schema = self.project.settings.progress.as_ref()?;
+        Some(schema.capture(&self.globals))
     }
     pub fn room(&self) -> &Room {
         match self.project.get(Kind::Room, &self.room) {
@@ -543,6 +566,7 @@ impl World {
         self.tick += 1;
         self.budget = 250_000;
         self.audio.clear();
+        self.progress_requested = false;
         self.input.clone_from(input);
         let dt = 1. / self.project.settings.hz as f32;
         for spark in &mut self.particles {

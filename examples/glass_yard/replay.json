@@ -1,0 +1,153 @@
+{
+  "cases": {
+    "dock_shift": {
+      "ticks": 52,
+      "input": [
+        [
+          1,
+          1,
+          "confirm"
+        ],
+        [
+          2,
+          52,
+          "right"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 1,
+          "field": "room",
+          "is": "dock"
+        },
+        {
+          "at": 16,
+          "field": "tile/dock/8/5",
+          "is": "g"
+        },
+        {
+          "at": 17,
+          "field": "tile/dock/8/5",
+          "is": "o"
+        },
+        {
+          "at": 17,
+          "field": "sound/latch",
+          "is": 1
+        },
+        {
+          "at": 52,
+          "field": "room",
+          "is": "main"
+        },
+        {
+          "at": 52,
+          "field": "global/unlocked",
+          "is": 1
+        },
+        {
+          "at": 52,
+          "field": "progress_saved",
+          "is": 1
+        },
+        {
+          "at": 52,
+          "field": "global/deliveries",
+          "is": 1
+        }
+      ]
+    },
+    "relay_from_version_one": {
+      "ticks": 72,
+      "progress": {
+        "id": "agge_glass_yard",
+        "version": 1,
+        "values": {
+          "runs": 9,
+          "gate": 1
+        }
+      },
+      "input": [
+        [
+          1,
+          1,
+          "up"
+        ],
+        [
+          2,
+          7,
+          "down"
+        ],
+        [
+          12,
+          62,
+          "right"
+        ],
+        [
+          67,
+          72,
+          "up"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 0,
+          "field": "global/deliveries",
+          "is": 9
+        },
+        {
+          "at": 1,
+          "field": "room",
+          "is": "relay"
+        },
+        {
+          "at": 26,
+          "field": "tile/relay/8/7",
+          "is": "g"
+        },
+        {
+          "at": 27,
+          "field": "tile/relay/8/7",
+          "is": "o"
+        },
+        {
+          "at": 72,
+          "field": "room",
+          "is": "clear"
+        },
+        {
+          "at": 72,
+          "field": "progress_saved",
+          "is": 1
+        },
+        {
+          "at": 72,
+          "field": "global/deliveries",
+          "is": 10
+        }
+      ]
+    },
+    "locked_relay": {
+      "ticks": 2,
+      "input": [
+        [
+          1,
+          1,
+          "up"
+        ]
+      ],
+      "expect": [
+        {
+          "at": 2,
+          "field": "room",
+          "is": "main"
+        },
+        {
+          "at": 2,
+          "field": "progress_saved",
+          "is": 0
+        }
+      ]
+    }
+  }
+}

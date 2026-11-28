@@ -757,6 +757,7 @@ pub enum SimulationMode<'a> {
     Inspect,
     Capture,
     Checkpoint,
+    Progress,
 }
 
 #[derive(Deserialize)]
@@ -774,8 +775,13 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
         return run_suite(store, args, Some(selected));
     }
     if args.get("cases").is_some() {
-        if matches!(mode, SimulationMode::Capture | SimulationMode::Checkpoint) {
-            return Err(fail("capture and checkpoint require a single replay"));
+        if matches!(
+            mode,
+            SimulationMode::Capture | SimulationMode::Checkpoint | SimulationMode::Progress
+        ) {
+            return Err(fail(
+                "capture, checkpoint and progress require a single replay",
+            ));
         }
         return run_suite(store, args, None);
     }
@@ -792,6 +798,11 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
         .transpose()?;
     let tiles: Option<TileRegion> =
         serde_json::from_value(fields.remove("tiles").unwrap_or(Value::Null))?;
+    let progress_out: bool = fields
+        .remove("progress_out")
+        .map(serde_json::from_value)
+        .transpose()?
+        .unwrap_or(false);
     let area: Option<[u32; 4]> = fields
         .remove("crop")
         .map(serde_json::from_value)
@@ -802,8 +813,10 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
             .map(serde_json::from_value)
             .transpose()?
             .unwrap_or(false);
-    if matches!(mode, SimulationMode::Test | SimulationMode::Checkpoint)
-        && (selection.is_some() || area.is_some() || tiles.is_some())
+    if matches!(
+        mode,
+        SimulationMode::Test | SimulationMode::Checkpoint | SimulationMode::Progress
+    ) && (selection.is_some() || area.is_some() || tiles.is_some() || progress_out)
     {
         return Err(fail("test accepts replay fields only"));
     }
@@ -830,6 +843,19 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
             None
         };
         return Ok((result, ok, bytes));
+    }
+    if mode == SimulationMode::Progress {
+        if !ok {
+            return Ok((result, false, None));
+        }
+        let progress = world
+            .progress_to_save()
+            .ok_or_else(|| fail("the final replay tick did not request a progress save"))?;
+        result["progress"] = json!({"id":progress.id,"version":progress.version});
+        return Ok((result, true, Some(serde_json::to_vec(&progress)?)));
+    }
+    if progress_out {
+        result["progress"] = json!(world.progress_to_save());
     }
     if let Some(selection) = selection {
         result["state"] =
@@ -928,6 +954,11 @@ fn guide(key: &str) -> Result<Value> {
             json!({"cases":{"arrival":{"ticks":0,"expect":[{"at":0,"field":"room","is":"main"}]}},"detail":false})
         }
         "project" => json!(agge_core::Settings::default()),
+        "progress" => json!({
+            "settings":{"progress":{"id":"game","version":2,"globals":{"stars":0},"migrations":{"1":{"rename":{"coins":"stars"}}}}},
+            "replay":{"ticks":1,"progress":{"id":"game","version":1,"values":{"coins":3}},"expect":[{"at":0,"field":"global/stars","is":3}]},
+            "command":"save","observe":"progress_saved"
+        }),
         _ => {
             return Err(fail(
                 "unknown schema; use project, edits, replay, or a resource kind",

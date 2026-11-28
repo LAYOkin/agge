@@ -227,6 +227,7 @@ impl World {
                     self.audio.push(id.clone());
                 }
             }
+            Statement::SaveProgress => self.progress_requested = true,
             Statement::Animate(id, restart) => {
                 let restart = if let Some(expr) = restart {
                     self.eval(entity, context, expr, 0)? != 0.

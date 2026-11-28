@@ -1,4 +1,7 @@
-use agge_core::{Color, Kind, Light, Project, Resource, Result, fail, read_asset, store::Store};
+use agge_core::{
+    Color, Kind, Light, Progress, ProgressSlot, Project, Resource, Result, fail, read_asset,
+    store::Store,
+};
 use agge_runtime::{
     Bounds, Checkpoint, CompiledGame, Draw, Input, Media, Replay, ReplayPlayback, ReplayRecorder,
     RoomCollider, TileLayer, World, draw_tile_layer, shade_lights,
@@ -43,9 +46,39 @@ pub fn run_player_with_save(
     room: Option<&str>,
     save: Option<PathBuf>,
 ) -> Result<()> {
+    run_player_with_files(file, room, save, None)
+}
+
+pub fn run_player_with_files(
+    file: PathBuf,
+    room: Option<&str>,
+    save: Option<PathBuf>,
+    progress_path: Option<PathBuf>,
+) -> Result<()> {
     let store = Store::new(file);
     let project = store.load()?.project;
-    let play = Play::new(project, store.root().to_owned(), room)?;
+    if progress_path.is_some() && project.settings.progress.is_none() {
+        return Err(fail("--progress requires a project progress schema"));
+    }
+    let mut saved = None;
+    let mut progress_slot = None;
+    let mut message = None;
+    if let Some(schema) = &project.settings.progress {
+        let loaded = progress_path
+            .or_else(|| default_progress_path(&schema.id))
+            .ok_or_else(|| fail("no user data directory; pass --progress FILE"))
+            .and_then(|path| ProgressSlot::open(path, schema));
+        match loaded {
+            Ok((slot, progress)) => {
+                progress_slot = Some(slot);
+                saved = progress;
+            }
+            Err(error) => message = Some((format!("Progress unavailable: {error}"), true)),
+        }
+    }
+    let mut play = Play::new_with_progress(project, store.root().to_owned(), room, saved.as_ref())?;
+    play.progress = progress_slot;
+    play.persist_progress();
     let title = play.world().project().settings.title.clone();
     let dims = play
         .world()
@@ -61,11 +94,28 @@ pub fn run_player_with_save(
                 play,
                 canvas: Canvas::default(),
                 save,
-                message: None,
+                message,
             }))
         }),
     )
     .map_err(|e| fail(e.to_string()))
+}
+
+fn default_progress_path(id: &str) -> Option<PathBuf> {
+    let absolute_env = |name| {
+        std::env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    let root = if cfg!(windows) {
+        absolute_env("LOCALAPPDATA")
+    } else if cfg!(target_os = "macos") {
+        absolute_env("HOME").map(|home| home.join("Library/Application Support"))
+    } else {
+        absolute_env("XDG_DATA_HOME")
+            .or_else(|| absolute_env("HOME").map(|home| home.join(".local/share")))
+    }?;
+    Some(root.join("agge").join(id).join("progress.json"))
 }
 
 struct Player {
@@ -76,6 +126,9 @@ struct Player {
 }
 impl eframe::App for Player {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if let Some(error) = self.play.progress_error.take() {
+            self.message = Some((error, true));
+        }
         if let Some(path) = &self.save {
             let request = ctx.input_mut(|input| {
                 if input.consume_key(egui::Modifiers::NONE, Key::F6) {
@@ -164,12 +217,23 @@ pub struct Play {
     bindings: KeyBindings,
     music_id: Option<String>,
     music_gain: Option<f32>,
+    progress: Option<ProgressSlot>,
+    progress_error: Option<String>,
 }
 impl Play {
     pub fn new(project: Project, root: PathBuf, room: Option<&str>) -> Result<Self> {
+        Self::new_with_progress(project, root, room, None)
+    }
+
+    fn new_with_progress(
+        project: Project,
+        root: PathBuf,
+        room: Option<&str>,
+        saved: Option<&Progress>,
+    ) -> Result<Self> {
         let bindings = compile_bindings(&project);
         let game = CompiledGame::new(project)?;
-        let world = game.preview(room)?;
+        let world = game.preview_with_progress(room, None, saved)?;
         let media = Media::load_indexed(world.project(), &root, game.index())?;
         Ok(Self::start(
             Simulation::Live(Box::new(world)),
@@ -215,6 +279,8 @@ impl Play {
             bindings,
             music_id: None,
             music_gain: None,
+            progress: None,
+            progress_error: None,
         };
         if play.world().fault().is_none() {
             play.audio();
@@ -353,7 +419,19 @@ impl Play {
             }
         };
         if ok {
+            self.persist_progress();
             self.audio();
+        }
+    }
+
+    fn persist_progress(&mut self) {
+        let Some(slot) = &mut self.progress else {
+            return;
+        };
+        if let Some(progress) = self.simulation.world().progress_to_save()
+            && let Err(error) = slot.write(&progress)
+        {
+            self.progress_error = Some(format!("Progress save failed: {error}"));
         }
     }
 

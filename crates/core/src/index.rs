@@ -76,6 +76,14 @@ impl Index {
         };
         index.index_pixels(project);
         index.link("project", Kind::Room, &project.settings.start, "start");
+        if let Some(progress) = &project.settings.progress {
+            if let Err(error) = progress.validate() {
+                index.error("progress_schema", "project/progress", error.to_string());
+            }
+            for name in progress.globals.keys() {
+                index.link_global("project", name, format!("progress/globals/{name}"));
+            }
+        }
         if !(1..=240).contains(&project.settings.hz)
             || !project
                 .settings
@@ -379,6 +387,15 @@ impl Index {
                 }
                 Resource::Script(source) => match script::compile(source) {
                     Ok(program) => {
+                        if project.settings.progress.is_none() {
+                            for line in &program.save_lines {
+                                index.error(
+                                    "script_progress",
+                                    &format!("{key}/line/{line}"),
+                                    "save requires a project progress schema",
+                                );
+                            }
+                        }
                         for reference in &program.references {
                             index.link(
                                 &key,
@@ -1082,6 +1099,14 @@ fn rename_global(project: &mut Project, id: &str, to: &str) -> Result<()> {
         }
         Ok(name == id)
     };
+    if let Some(progress) = &project.settings.progress {
+        for name in progress.globals.keys() {
+            found |= check_target(name)?;
+        }
+        if progress.globals.contains_key(id) && progress.version == 65_535 {
+            return Err(fail("progress version cannot be incremented"));
+        }
+    }
     for ((_, key), resource) in &project.resources {
         match resource {
             Resource::Script(source) => {
@@ -1111,6 +1136,19 @@ fn rename_global(project: &mut Project, id: &str, to: &str) -> Result<()> {
     }
     if !found {
         return Err(fail(format!("absent global/{id}")));
+    }
+    if let Some(progress) = &mut project.settings.progress
+        && let Some(value) = progress.globals.remove(id)
+    {
+        progress.globals.insert(to.into(), value);
+        progress.migrations.insert(
+            progress.version,
+            crate::ProgressMigration {
+                rename: [(id.into(), to.into())].into(),
+                remove: BTreeSet::new(),
+            },
+        );
+        progress.version += 1;
     }
     for (script, spans) in script_edits {
         let source = script_mut(project, &script)?;

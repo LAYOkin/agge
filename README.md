@@ -37,6 +37,7 @@ cargo run -p agge -- test examples/bankshot/game.agge @examples/bankshot/replay.
 | [Pulse Lock](examples/pulse_lock) | Time three taps as a cursor sweeps across the gates. Uses a custom keyboard action and replay-verified timing. |
 | [Brassline Foundry](examples/pixel_foundry) | Inspect a layered diver, a mirrored crab, animated welds, a recolored rival, and a tileset drawn entirely with the native sprite DSL. |
 | [Lattice Lanterns](examples/lattice) | Solve a click-driven lights-out puzzle with animated native pixel art and replayed pointer input. |
+| [Glass Yard](examples/glass_yard) | Open gates, complete two courier shifts, and carry progress across a game update. |
 
 ![Cinder Circuit playfield showing the pilot, three relays, and status meters](examples/cinder/preview.png)
 

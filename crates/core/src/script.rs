@@ -98,6 +98,7 @@ pub struct Program {
     pub references: Vec<Reference>,
     pub globals: Vec<GlobalUse>,
     pub tile_keys: Vec<TileKey>,
+    pub save_lines: Vec<usize>,
     pub touch_targets: BTreeSet<String>,
     pub locations: BTreeMap<Event, EventLocation>,
     pub symbols: BTreeMap<String, Vec<(usize, Access)>>,
@@ -144,6 +145,7 @@ pub enum Statement {
     Spawn(String, Expr, Expr),
     Emit(String, Option<Box<(Expr, Expr)>>),
     Sound(String),
+    SaveProgress,
     Animate(String, Option<Expr>),
     After(String, Expr),
     Goto(String),
@@ -838,6 +840,10 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
                 Emit(id, position)
             }
             "sound" => Sound(p.reference(Kind::Audio, false)?),
+            "save" => {
+                p.program.save_lines.push(p.line);
+                SaveProgress
+            }
             "animate" => {
                 let id = p.reference(Kind::Animation, false)?;
                 let restart = if p.peek() == Some(&Token::Punct(',')) {

@@ -1,0 +1,199 @@
+agge/1 {"title":"Glass Yard","start":"main","size":[256,176],"hz":60,"seed":1,"progress":{"id":"agge_glass_yard","version":2,"globals":{"deliveries":0.0,"unlocked":0.0},"migrations":{"1":{"rename":{"gate":"unlocked","runs":"deliveries"}}}}}
+room clear {"bg":[21,25,37,255],"instances":[["sign","beacon",23.0,46.0],["back","back",0.0,0.0]],"backdrops":[{"sprite":"floor","frame":0,"at":[0.0,0.0],"size":[16.0,16.0],"scroll":[0.0,0.0],"repeat":[true,true],"tint":[255,255,255,255]}],"ui":[{"at":[22.0,18.0],"text":"SHIFT COMPLETE","color":[255,211,139,255],"size":15},{"at":[54.0,52.0],"text":"THE RELAY IS LIT","color":[188,223,216,255],"size":8},{"at":[22.0,108.0],"text":"DELIVERIES   ","color":[188,223,216,255],"size":8,"value":"deliveries"},{"at":[22.0,144.0],"text":"ENTER    DISPATCH","color":[188,223,216,255],"size":8}]}
+room dock {"bg":[21,25,37,255],"instances":[["courier","courier",32.0,80.0],["plate","plate_dock",96.0,80.0],["exit","exit_dock",208.0,80.0]],"maps":["dock"],"backdrops":[{"sprite":"floor","frame":0,"at":[0.0,0.0],"size":[16.0,16.0],"scroll":[0.0,0.0],"repeat":[true,true],"tint":[255,255,255,255]}],"ui":[{"at":[17.0,7.0],"text":"01   GLASS DOCK","color":[255,211,139,255],"size":10},{"at":[17.0,20.0],"text":"LIGHT PLATE / FIND RELAY","color":[188,223,216,255],"size":8},{"at":[17.0,159.0],"text":"ARROWS  MOVE  /  ESC  DISPATCH","color":[188,223,216,255],"size":8}]}
+room main {"bg":[21,25,37,255],"instances":[["sign","beacon",23.0,45.0],["dispatch","dispatch",0.0,0.0]],"backdrops":[{"sprite":"floor","frame":0,"at":[0.0,0.0],"size":[16.0,16.0],"scroll":[0.0,0.0],"repeat":[true,true],"tint":[255,255,255,255]}],"ui":[{"at":[22.0,18.0],"text":"GLASS YARD","color":[255,211,139,255]},{"at":[54.0,51.0],"text":"NIGHT DISPATCH","color":[188,223,216,255],"size":10},{"at":[22.0,82.0],"text":"ENTER    DOCK SHIFT","color":[188,223,216,255],"size":8},{"at":[22.0,98.0],"text":"UP       RELAY SHIFT","color":[188,223,216,255],"size":8},{"at":[22.0,128.0],"text":"RELAY ACCESS  ","color":[188,223,216,255],"size":8,"value":"unlocked"},{"at":[22.0,144.0],"text":"DELIVERIES    ","color":[188,223,216,255],"size":8,"value":"deliveries"}]}
+room relay {"bg":[21,25,37,255],"instances":[["courier","courier",32.0,80.0],["plate","plate_relay",96.0,112.0],["exit","exit_relay",208.0,80.0]],"maps":["relay"],"backdrops":[{"sprite":"floor","frame":0,"at":[0.0,0.0],"size":[16.0,16.0],"scroll":[0.0,0.0],"repeat":[true,true],"tint":[255,255,255,255]}],"ui":[{"at":[17.0,7.0],"text":"02   SIGNAL RELAY","color":[255,211,139,255],"size":10},{"at":[17.0,20.0],"text":"LIGHT PLATE / FIND RELAY","color":[188,223,216,255],"size":8},{"at":[17.0,159.0],"text":"ARROWS  MOVE  /  ESC  DISPATCH","color":[188,223,216,255],"size":8}]}
+object back {"size":[16.0,16.0],"color":[255,255,255,255],"script":"back","hidden":true}
+object beacon {"size":[20.0,20.0],"color":[255,255,255,255],"animation":"beacon"}
+object courier {"size":[16.0,16.0],"color":[255,255,255,255],"sprite":"courier","hitbox":[2.0,2.0,12.0,12.0],"script":"walk","depth":2}
+object dispatch {"size":[16.0,16.0],"color":[255,255,255,255],"script":"dispatch","hidden":true}
+object exit_dock {"size":[16.0,16.0],"color":[255,255,255,255],"animation":"beacon","script":"finish_dock","depth":-1}
+object exit_relay {"size":[16.0,16.0],"color":[255,255,255,255],"animation":"beacon","script":"finish_relay","depth":-1}
+object plate_dock {"size":[16.0,16.0],"color":[255,255,255,255],"sprite":"plate","script":"gate_dock","depth":-1}
+object plate_relay {"size":[16.0,16.0],"color":[255,255,255,255],"sprite":"plate","script":"gate_relay","depth":-1}
+sprite beacon {"pixel":"beacon"}
+sprite courier {"pixel":"courier"}
+sprite floor {"pixel":"floor"}
+sprite plate {"pixel":"plate"}
+sprite terrain {"pixel":"terrain"}
+animation beacon {"sprite":"beacon","frames":[0,1],"fps":9,"holds":{"0":3}}
+animation boots {"sprite":"courier","frames":[1,0],"fps":25,"mode":"once"}
+animation plate_on {"sprite":"plate","frames":[1],"fps":8}
+tilemap dock {"cell":16,"atlas":"terrain","tiles":{"#":[0,true],"g":[1,true],"o":[2,false]},"rows":["................","................","################","#..#....#......#","#..#....#......#","#.......g......#","#...#...#......#","#.......#....#.#","#.......#......#","################","................"]}
+tilemap relay {"cell":16,"atlas":"terrain","tiles":{"#":[0,true],"g":[1,true],"o":[2,false]},"rows":["................","................","################","#.......#..#...#","#....#..#..#...#","#....#..#..#...#","#....#..#......#","#.......g......#","#.......#......#","################","................"]}
+script back
+step:
+  if pressed("confirm") || pressed("cancel")
+    goto main
+  end
+---
+script dispatch
+step:
+  if pressed("confirm")
+    goto dock
+  end
+  if pressed("up") && global(unlocked) != 0
+    goto relay
+  end
+---
+script finish_dock
+step:
+  if touch("courier")
+    global unlocked = 1
+    global deliveries = global(deliveries) + 1
+    save
+    sound seal
+    goto main
+  end
+---
+script finish_relay
+step:
+  if touch("courier")
+    global deliveries = global(deliveries) + 1
+    save
+    sound seal
+    goto clear
+  end
+---
+script gate_dock
+create:
+  if tile_is("dock", 8, 5, "o")
+    animate plate_on
+  end
+step:
+  if tile_solid("dock", 8, 5) && touch("courier")
+    tile dock 8, 5, "o"
+    animate plate_on
+    emit sparks, x + 8, y + 8
+    sound latch
+  end
+---
+script gate_relay
+create:
+  if tile_is("relay", 8, 7, "o")
+    animate plate_on
+  end
+step:
+  if tile_solid("relay", 8, 7) && touch("courier")
+    tile relay 8, 7, "o"
+    animate plate_on
+    emit sparks, x + 8, y + 8
+    sound latch
+  end
+---
+script walk
+step:
+  if pressed("cancel")
+    goto main
+  end
+  if remaining(stride) == 0
+    set dx = down("right") - down("left")
+    set dy = down("down") - down("up")
+    if dx != 0 || dy != 0
+      if dx != 0
+        flip dx < 0, false
+        move 16 * dx, 0
+      else
+        move 0, 16 * dy
+      end
+      animate boots, true
+      after stride, 5
+    end
+  end
+---
+audio latch {"file":"audio/latch.wav","gain":0.65}
+audio seal {"file":"audio/seal.wav","gain":0.65}
+particle sparks {"count":10,"life":24,"speed":50.0,"radius":1.0,"color":[255,224,145,255],"fade":18}
+palette enamel {"swatches":{"a":"182534","b":"243748","c":"37566d","d":"608494","g":"508b84","h":"85c7ad","k":"0f1822","l":"655783","m":"cdf2c3","o":"eb9c60","p":"3b3053","r":"bd6e58","s":"75444b","v":"9b82a7","w":"fff3c3","y":"ffd58a"},"ramps":["abcd","plv","sroyw","ghm"],"ink":"k"}
+pixel beacon
+canvas 16 16
+style enamel
+layer base
+  oval k 1 8 14 6
+  box b 4 10 8 3
+  line c 4 10 11 10
+layer lamp
+  poly g 7,1 9,1 13,8 9,12 6,12 3,8
+  poly h 7,2 8,2 12,8 8,11 6,11 4,8
+  rows 6 4 .m./m2h/mhh/m2h/.mg/.g.
+  px w 7 6
+frame steady
+frame flare steady
+layer lamp
+  rows 5 5 .2m./2myh/.mw./.gh.
+  px m 2 8
+  px h 13 6
+---
+pixel courier
+canvas 16 16
+style enamel
+layer shadow
+  oval k 2 11 12 4
+layer suit
+  poly p 5,3 9,2 13,5 12,11 14,13 8,14 4,12 2,10 3,6
+  poly l 5,4 10,4 12,6 11,10 9,12 4,11 4,7
+  rows 5 4 4v/v4l/vl3w/lly2w/2l2g./l3g./.2h../2pl2.
+  outline 1 1 14 14
+layer gear
+  rows 3 7 d../da./bd./.d./.c.
+  rows 10 8 .yg/.yw/.or
+frame still
+frame stride still
+layer suit
+  rows 4 12 -p..p-/p.2-2p
+layer gear
+  px y 13 8
+---
+pixel floor
+canvas 16 16
+style enamel
+layer basalt
+  box a 0 0 16 16
+  line k 0 0 15 0
+  line k 0 0 0 15
+  rows 2 2 3b10./b12./13./7.2b4./13./4.b8./13./10.b2./13./6.b6./13./13./2.b10.
+  px b 14 14
+---
+pixel plate
+canvas 16 16
+style enamel
+layer deck
+  oval k 1 2 14 12
+  oval c 2 2 12 11
+  oval b 3 3 10 9
+  rows 5 5 2d2c/d4c/d2r2c/c2o2c/4c
+frame idle
+frame lit idle
+layer lamp
+  rows 5 5 2h2g/h2yh./hoyh./g2hg./4g
+---
+pixel terrain
+canvas 16 16
+style enamel
+layer steel
+  box k 0 0 16 16
+frame wall
+layer steel
+  box b 1 1 14 13
+  box c 2 2 12 8
+  line d 2 2 13 2
+  line a 2 11 13 11
+  rows 3 4 a8.a/a2d2c2d2c/a8.a/a2c2d2c2d/a8.a
+  px d 2 12
+  px c 13 12
+frame gate base
+layer steel
+  box b 1 0 14 16
+  box s 3 1 10 14
+  line p 1 0 1 15
+  line d 14 0 14 15
+  line o 4 1 4 14
+  line d 11 1 11 14
+  rows 5 4 6r/6p/.yrsy./.ywoy./.yrsy./6p/6r
+frame open base
+layer steel
+  box a 1 0 14 16
+  line c 1 0 1 15
+  line d 14 0 14 15
+  rows 4 6 2g4.2g/.g4.g./.h4.h./2g4.2g
+---

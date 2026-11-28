@@ -583,6 +583,8 @@ struct Batch {
     preview: bool,
     #[serde(default)]
     verify: Vec<Replay>,
+    #[serde(default)]
+    verify_assets: bool,
 }
 pub fn edit(store: &Store, args: Value) -> Result<(Value, bool)> {
     let batch: Batch = serde_json::from_value(args)?;
@@ -602,15 +604,25 @@ pub fn edit(store: &Store, args: Value) -> Result<(Value, bool)> {
             "verify accepts up to four replays with assertions and 6000 total ticks",
         ));
     }
-    if !batch.preview && batch.verify.is_empty() {
+    if !batch.preview && !batch.verify_assets && batch.verify.is_empty() {
         return Ok((
             json!(store.transact(batch.base.as_deref(), batch.ops)?),
             true,
         ));
     }
     let mut reports = Vec::new();
-    let (receipt, passed) =
-        store.transact_checked(batch.base.as_deref(), batch.ops, batch.preview, |project| {
+    let mut asset_error = None;
+    let (receipt, passed) = store.transact_indexed(
+        batch.base.as_deref(),
+        batch.ops,
+        batch.preview,
+        |project, index| {
+            if batch.verify_assets
+                && let Err(error) = Media::load_indexed(project, store.root(), index)
+            {
+                asset_error = Some(error.to_string());
+                return Ok(false);
+            }
             if batch.verify.is_empty() {
                 return Ok(true);
             }
@@ -624,13 +636,17 @@ pub fn edit(store: &Store, args: Value) -> Result<(Value, bool)> {
                 }
             }
             Ok(true)
-        })?;
+        },
+    )?;
     let mut result = json!(receipt);
     result["committed"] = json!(
         passed && !batch.preview && (!receipt.changed.is_empty() || !receipt.removed.is_empty())
     );
     if !reports.is_empty() {
         result["reports"] = json!(reports);
+    }
+    if let Some(error) = asset_error {
+        result["asset_error"] = json!(error);
     }
     Ok((result, passed))
 }
@@ -872,7 +888,7 @@ pub fn simulate(store: &Store, mut args: Value, mode: SimulationMode<'_>) -> Res
         })
     });
     let bytes = if let Some(area) = area.filter(|_| ok || capture_on_failure) {
-        let media = Media::load(world.project(), store.root())?;
+        let media = Media::for_capture(&world, store.root(), area)?;
         result["crop"] = json!(area);
         Some(capture(&world, &media, area)?)
     } else {

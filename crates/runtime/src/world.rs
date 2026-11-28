@@ -444,6 +444,9 @@ impl World {
     pub fn project(&self) -> &Project {
         &self.project
     }
+    pub(crate) fn index(&self) -> &Index {
+        &self.index
+    }
     pub fn progress_requested(&self) -> bool {
         self.progress_requested && self.fault.is_none()
     }

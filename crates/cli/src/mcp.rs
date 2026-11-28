@@ -136,7 +136,7 @@ fn tool_list() -> Vec<Value> {
         tool(
             NAMES[1],
             "Atomic edits. preview leaves the project untouched. verify requires replays to pass before commit. Query schema edits for forms.",
-            json!({"ops":{"type":"array","items":{"type":"object"}},"base":text,"preview":boolean,"verify":array}),
+            json!({"ops":{"type":"array","items":{"type":"object"}},"base":text,"preview":boolean,"verify":array,"verify_assets":boolean}),
             json!(["ops"]),
         ),
         tool(

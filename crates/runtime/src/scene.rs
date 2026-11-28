@@ -44,14 +44,43 @@ type PixelSheet = (Arc<RgbaImage>, FrameRects);
 
 impl Media {
     pub fn load(project: &Project, root: &Path) -> Result<Self> {
-        Self::load_internal(project, root, None)
+        Self::load_internal(project, root, None, None)
     }
 
     pub fn load_indexed(project: &Project, root: &Path, index: &Index) -> Result<Self> {
-        Self::load_internal(project, root, Some(index))
+        Self::load_internal(project, root, Some(index), None)
     }
 
-    fn load_internal(project: &Project, root: &Path, index: Option<&Index>) -> Result<Self> {
+    /// Load the sprites actually used by a capture. Audio and offscreen assets
+    /// are left to project validation.
+    pub fn for_capture(world: &World, root: &Path, area: [u32; 4]) -> Result<Self> {
+        let (_, view) = capture_bounds(world, area)?;
+        let mut sprites = BTreeSet::new();
+        world.draw_scene(view, &mut |draw| match draw {
+            Draw::Sprite(_, id, _, _, _) => {
+                sprites.insert(id);
+            }
+            Draw::Backdrop(quad) => {
+                sprites.insert(&quad.layer.sprite);
+            }
+            Draw::TileLayer(layer, view) => {
+                if let Some(atlas) = layer.map.atlas.as_deref()
+                    && has_atlas_tile(layer, view)
+                {
+                    sprites.insert(atlas);
+                }
+            }
+            _ => {}
+        });
+        Self::load_internal(world.project(), root, Some(world.index()), Some(&sprites))
+    }
+
+    fn load_internal(
+        project: &Project,
+        root: &Path,
+        index: Option<&Index>,
+        selected: Option<&BTreeSet<&str>>,
+    ) -> Result<Self> {
         let mut media = Self::default();
         let mut sheets = BTreeMap::<&str, Arc<RgbaImage>>::new();
         let mut pixel_sheets = BTreeMap::<(&str, &[String]), PixelSheet>::new();
@@ -60,6 +89,9 @@ impl Media {
         let mut checked_audio = BTreeSet::new();
         for ((kind, id), resource) in &project.resources {
             if let Resource::Sprite(sprite) = resource {
+                if selected.is_some_and(|ids| !ids.contains(id.as_str())) {
+                    continue;
+                }
                 if let Some(source) = &sprite.pixel {
                     let key = (source.as_str(), sprite.poses.as_slice());
                     let (image, rects) = match pixel_sheets.entry(key) {
@@ -106,7 +138,8 @@ impl Media {
                 }
                 media.sprites.insert(id.clone(), image);
             }
-            if let Resource::Audio(audio) = resource
+            if selected.is_none()
+                && let Resource::Audio(audio) = resource
                 && checked_audio.insert(audio.file.as_str())
             {
                 let bytes =
@@ -421,31 +454,46 @@ fn visible_tiles(layer: TileLayer<'_>, view: Bounds, mut visit: impl FnMut(Bound
     let map = layer.map;
     let cell = map.cell.max(1) as f32;
     let [left, top] = map.at.map(|position| position as f32);
-    if view.right <= left || view.bottom <= top {
-        return;
+    for (y, x, end) in tile_rows(map, view) {
+        for (i, symbol) in layer.row(y, x, end).enumerate() {
+            if let Some(tile) = map.tiles.get(&(symbol as char)) {
+                let bounds = Bounds::new(
+                    left + (x + i) as f32 * cell,
+                    top + y as f32 * cell,
+                    cell,
+                    cell,
+                );
+                visit(bounds, tile);
+            }
+        }
     }
-    let column = |x: f32| ((x - left) / cell).max(0.);
-    let row = |y: f32| ((y - top) / cell).max(0.);
+}
+
+fn tile_rows(map: &Tilemap, view: Bounds) -> impl Iterator<Item = (usize, usize, usize)> {
+    let cell = map.cell.max(1) as f32;
+    let [left, top] = map.at.map(|position| position as f32);
+    let column = |x: f32| (x - left) / cell;
+    let row = |y: f32| (y - top) / cell;
     let x0 = column(view.left).floor() as usize;
     let x1 = column(view.right).ceil() as usize;
     let y0 = row(view.top).floor() as usize;
     let y1 = (row(view.bottom).ceil() as usize).min(map.rows.len());
-    for y in y0..y1 {
+    (y0..y1).filter_map(move |y| {
         let end = x1.min(map.rows[y].len());
-        if x0 < end {
-            for (i, symbol) in layer.row(y, x0, end).enumerate() {
-                if let Some(tile) = map.tiles.get(&(symbol as char)) {
-                    let bounds = Bounds::new(
-                        left + (x0 + i) as f32 * cell,
-                        top + y as f32 * cell,
-                        cell,
-                        cell,
-                    );
-                    visit(bounds, tile);
-                }
-            }
-        }
-    }
+        (x0 < end).then_some((y, x0, end))
+    })
+}
+
+fn has_atlas_tile(layer: TileLayer<'_>, view: Bounds) -> bool {
+    tile_rows(layer.map, view).any(|(y, x, end)| {
+        layer.row(y, x, end).any(|symbol| {
+            layer
+                .map
+                .tiles
+                .get(&(symbol as char))
+                .is_some_and(|tile| tile.frame().is_some())
+        })
+    })
 }
 
 pub enum RoomCollider {
@@ -558,7 +606,7 @@ pub fn shade_lights<'a>(
     ]
 }
 
-pub fn capture(world: &World, media: &Media, area: [u32; 4]) -> Result<Vec<u8>> {
+fn capture_bounds(world: &World, area: [u32; 4]) -> Result<(Bounds, Bounds)> {
     let [x, y, w, h] = area;
     let size = world.project.settings.size;
     if !(1..=2048).contains(&w)
@@ -578,6 +626,12 @@ pub fn capture(world: &World, media: &Media, area: [u32; 4]) -> Result<Vec<u8>> 
         w as f32,
         h as f32,
     );
+    Ok((screen, view))
+}
+
+pub fn capture(world: &World, media: &Media, area: [u32; 4]) -> Result<Vec<u8>> {
+    let (screen, view) = capture_bounds(world, area)?;
+    let [_, _, w, h] = area;
     let mut buffer = RgbaImage::from_pixel(w, h, image::Rgba(world.room().bg));
     world.draw_scene(view, &mut |draw| {
         raster(&mut buffer, view, draw, media, &world.project)

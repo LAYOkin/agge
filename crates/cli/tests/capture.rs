@@ -89,3 +89,71 @@ fn capture_refuses_to_overwrite_the_project_or_an_alias() {
         assert_eq!(fs::read(&source).unwrap(), contents);
     }
 }
+
+#[test]
+fn capture_loads_visible_atlases_and_ignores_unrelated_media() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("game.agge");
+    let target = directory.path().join("capture.png");
+    fs::write(
+        &source,
+        r#"agge/1 {"size":[48,32]}
+room main {"maps":["floor"]}
+sprite terrain {"file":"absent.png"}
+audio distant {"file":"unrelated.wav"}
+tilemap floor {"cell":16,"atlas":"terrain","tiles":{"t":[0]},"rows":["..t"]}
+"#,
+    )
+    .unwrap();
+    let agge = env!("CARGO_BIN_EXE_agge");
+    let capture = |args: &str| {
+        Command::new(agge)
+            .arg("capture")
+            .arg(&source)
+            .arg(args)
+            .arg(&target)
+            .output()
+            .unwrap()
+    };
+    let crop = capture(r#"{"ticks":0,"crop":[0,0,16,16]}"#);
+    assert!(crop.status.success(), "{crop:?}");
+    let visible = capture(r#"{"ticks":0,"crop":[32,0,16,16]}"#);
+    assert_eq!(visible.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&visible.stderr).contains("sprite/terrain"));
+    let check = Command::new(agge)
+        .arg("check")
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert_eq!(check.status.code(), Some(1));
+}
+
+#[test]
+fn asset_guard_rejects_incomplete_media_without_taking_the_candidate_live() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("game.agge");
+    let before = b"agge/1 {}\nroom main {}\n";
+    fs::write(&source, before).unwrap();
+    let store = agge_core::store::Store::new(&source);
+    let rev = store.load().unwrap().revision;
+    let request = serde_json::json!({"base":rev,"verify_assets":true,"ops":[
+        {"op":"put","kind":"sprite","id":"card","data":{"file":"missing.png"}}
+    ]});
+    let edit = Command::new(env!("CARGO_BIN_EXE_agge"))
+        .arg("edit")
+        .arg(&source)
+        .arg(request.to_string())
+        .output()
+        .unwrap();
+    assert_eq!(edit.status.code(), Some(1), "{edit:?}");
+    let response: serde_json::Value = serde_json::from_slice(&edit.stdout).unwrap();
+    assert_eq!(response["committed"], false);
+    assert!(
+        response["asset_error"]
+            .as_str()
+            .unwrap()
+            .starts_with("sprite/card")
+    );
+    assert_eq!(fs::read(&source).unwrap(), before);
+    assert!(!directory.path().join("game.agge.history").exists());
+}

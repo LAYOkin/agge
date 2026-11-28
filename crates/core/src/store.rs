@@ -142,6 +142,17 @@ impl Store {
         preview: bool,
         verify: impl FnOnce(&Project) -> Result<bool>,
     ) -> Result<(Receipt, bool)> {
+        self.transact_indexed(base, ops, preview, |project, _| verify(project))
+    }
+
+    /// Run a guard with the already validated candidate dependency index.
+    pub fn transact_indexed(
+        &self,
+        base: Option<&str>,
+        ops: Vec<Edit>,
+        preview: bool,
+        verify: impl FnOnce(&Project, &Index) -> Result<bool>,
+    ) -> Result<(Receipt, bool)> {
         self.update_checked(base, preview, verify, move |project| {
             for (i, op) in ops.into_iter().enumerate() {
                 op.apply(project)
@@ -155,14 +166,14 @@ impl Store {
         base: Option<&str>,
         edit: impl FnOnce(&mut Project) -> Result<()>,
     ) -> Result<Receipt> {
-        self.update_checked(base, false, |_| Ok(true), edit)
+        self.update_checked(base, false, |_, _| Ok(true), edit)
             .map(|(receipt, _)| receipt)
     }
     fn update_checked(
         &self,
         base: Option<&str>,
         preview: bool,
-        verify: impl FnOnce(&Project) -> Result<bool>,
+        verify: impl FnOnce(&Project, &Index) -> Result<bool>,
         edit: impl FnOnce(&mut Project) -> Result<()>,
     ) -> Result<(Receipt, bool)> {
         let _lock = self.lock()?;
@@ -178,7 +189,7 @@ impl Store {
         let new = Index::build(&project);
         new.require_valid()?;
         let mut receipt = receipt(&old, &new, &next);
-        let passed = verify(&project)?;
+        let passed = verify(&project, &new)?;
         if preview || !passed || old == new.symbols {
             receipt.revision = revision;
             return Ok((receipt, passed));

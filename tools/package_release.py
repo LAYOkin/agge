@@ -2,6 +2,7 @@
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import platform
 import shutil
@@ -40,6 +41,19 @@ def verify(stage, scratch, suffix):
     player = stage / f"agge-player{suffix}"
     if sha256(exported / f"play{suffix}") != sha256(player):
         raise ValueError("exported game does not contain the staged desktop player")
+
+    # Exercise an update with a version-one save on a standalone export.
+    yard = stage / "examples" / "glass_yard"
+    exported_yard = scratch / "Glass Yard"
+    run(agge, "export", yard / "game.agge", exported_yard)
+    replay = json.loads((yard / "replay.json").read_text(encoding="utf-8"))
+    upgrade_case = scratch / "upgrade.json"
+    upgrade_case.write_text(json.dumps(replay["cases"]["relay_from_version_one"]), encoding="utf-8")
+    save = scratch / "progress.json"
+    run(agge, "progress", exported_yard / "game.agge", f"@{upgrade_case}", save)
+    progress = json.loads(save.read_text(encoding="utf-8"))
+    if progress != {"id": "agge_glass_yard", "version": 2, "values": {"deliveries": 10, "unlocked": 1}}:
+        raise ValueError("standalone save migration changed expected player progress")
 
 
 def package(bin_dir, output, label):

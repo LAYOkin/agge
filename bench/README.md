@@ -161,3 +161,25 @@ The baselines use batched reference reads, explicit placement edits, a sample gr
 python -m pip install -r bench/requirements.txt
 python bench/release_workflows.py target/release/agge --runs 5
 ```
+
+## Scoped render and tile feedback
+
+On the Ryzen 5 5600H Windows test machine, a 32×24 crop with 32 unrelated 512×512 PNG sheets took a median 6.20 ms with scoped loading, compared with 42.25 ms at `f1f4e31`. Both builds produced the same PNG bytes. Reading an 8×6 tile region took 99 `o200k_base` request and reply tokens, compared with 531 for individual cell samples in one replay. [Results and PNG digest](scoped-results.json)
+
+```sh
+python bench/scoped_feedback.py /path/to/baseline/agge target/release/agge --repetitions 7
+```
+
+## Active actors
+
+Seven alternating Windows release runs on the same Ryzen 5 5600H verified replay outcomes in both builds. The active-set benchmark steps one actor through 10,000 ticks in a room with 4,000 static decorations. The two collision fixtures use the same checks as the earlier measurements. [Individual runs](runtime-expansion-results.json)
+
+| Replay workload | Baseline `f1f4e31` | Updated |
+| --- | ---: | ---: |
+| Active actor among 4,000 decorations | 229.65 ms | 16.36 ms |
+| Tile collision with 256 movers | 31.76 ms | 32.01 ms |
+| Solid-instance collision with 256 movers | 25.31 ms | 24.37 ms |
+
+```sh
+python bench/replay_speed.py /path/to/baseline/agge target/release/agge --case idle --case tiles --case collision --samples 7
+```

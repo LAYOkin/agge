@@ -10,7 +10,7 @@ The first v0.1 release requires demonstrated readiness for professional and comm
 | --- | --- |
 | Game production | Validate complete games through authoring, playtesting, export, and a shipped update that preserves player progress. Document the supported workflows and platform requirements. |
 | Source | Run locked workspace tests and Clippy on all three CI systems. Record the result for the candidate commit. |
-| Portable builds | Stage the three binaries together, check all bundled projects, replay their fixtures, and export and retest Cinder Circuit from the staged installation. Verify archive hashes and executable permissions after extraction. |
+| Portable builds | Stage the three binaries together, check all bundled projects, replay their fixtures, and verify a game update with an older save on a standalone export. Verify archive hashes and executable permissions after extraction. |
 | Native QA | From an extracted archive, open Studio and start and export a game. Exercise keyboard and pointer input, resizing and focus changes, sound, save and restore, and an external file reload. Run on representative graphics drivers and on at least one clean system per claimed platform. |
 | Installation | Confirm minimum OS and CPU targets, graphics requirements, and package instructions on those systems. Current archives use each CI runner's architecture. Establish signing and notarization expectations before distributing publicly. |
 | Agent workflow | Connect the candidate build's MCP server in a fresh project, make a guarded edit, render a crop, and check a replay. Run the published benchmark harness and collect matched model-session usage before making a general token-saving claim. |

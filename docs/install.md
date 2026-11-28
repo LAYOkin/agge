@@ -48,4 +48,4 @@ Games with a progress schema load and save player data under `agge/<game-id>/pro
 
 ## Make a portable build
 
-After an optimized build, run `python tools/package_release.py --label dev` with Python 3.11 or newer. The script puts the archive and checksum in `target/dist`. It checks every bundled project and replay, then exports and retests Cinder Circuit with the staged player. CI runs this flow per platform for packaging changes, version tags, and on demand.
+After an optimized build, run `python tools/package_release.py --label dev` with Python 3.11 or newer. The script puts the archive and checksum in `target/dist`. It checks the bundled projects and replays, exports Cinder Circuit and Glass Yard, and verifies a progress migration on the exported Glass Yard project. CI runs this flow per platform for packaging changes, version tags, and on demand.

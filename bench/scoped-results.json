@@ -1,0 +1,13 @@
+{
+  "repetitions": 7,
+  "capture": {
+    "baseline_ms": 42.25,
+    "scoped_ms": 6.2,
+    "sha256": "5e62af59e0ff7708f6bf484ee07ac13b959766302c94cab1c3d4d42524a5af23",
+    "unrelated_sheets": 32
+  },
+  "tile_region": {
+    "expanded_tokens": 531,
+    "scoped_tokens": 99
+  }
+}

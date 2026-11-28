@@ -106,6 +106,23 @@ def overlap_fixture(folder, ticks):
     return project, spec
 
 
+def idle_fixture(folder, ticks):
+    project = folder / "game.agge"
+    replay = folder / "replay.json"
+    placements = [["hero", "hero", 0, 0]]
+    placements.extend([f"prop_{i}", "prop", (i % 100) * 4, (i // 100) * 4] for i in range(4000))
+    project.write_text(
+        'agge/1 {}\nroom main ' + json.dumps({"instances": placements}) +
+        '\nobject prop {"hidden":true}\nobject hero {"script":"drive"}' +
+        '\nscript drive\nstep:\n  move 1, 0\n---\n',
+        encoding="utf-8")
+    replay.write_text(json.dumps({"ticks": ticks, "expect": [
+        {"at": ticks, "field": "entity/hero/x", "is": ticks},
+        {"at": ticks, "field": "count/prop", "is": 4000},
+    ]}), encoding="utf-8")
+    return project, replay
+
+
 def sample(binary, project, replay):
     start = time.perf_counter()
     result = subprocess.run([binary, "test", project, f"@{replay}"],
@@ -120,7 +137,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", nargs="+", type=Path)
     parser.add_argument("--samples", default=7, type=int)
-    cases = ["small", "large", "collision", "tiles", "overlap"]
+    cases = ["small", "large", "collision", "tiles", "overlap", "idle"]
     parser.add_argument("--case", choices=cases, action="append")
     args = parser.parse_args()
     if not 3 <= args.samples <= 100:
@@ -141,6 +158,10 @@ def main():
                 ticks = 120
                 project, replay = overlap_fixture(Path(root), ticks)
                 details = {"targets": 1024, "probes": 128}
+            elif name == "idle":
+                ticks = 10_000
+                project, replay = idle_fixture(Path(root), ticks)
+                details = {"static": 4000, "movers": 1}
             else:
                 ticks, spans = (3000, 30) if name == "small" else (60_000, 4096)
                 project, replay = fixture(Path(root), ticks, spans)

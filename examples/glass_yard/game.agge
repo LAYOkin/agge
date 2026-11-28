@@ -42,7 +42,7 @@ step:
     global unlocked = 1
     global deliveries = global(deliveries) + 1
     save
-    sound seal
+    sound seal, 1, 0, 100
     goto main
   end
 ---
@@ -51,7 +51,7 @@ step:
   if touch("courier")
     global deliveries = global(deliveries) + 1
     save
-    sound seal
+    sound seal, 1, 0, 100
     goto clear
   end
 ---
@@ -65,7 +65,7 @@ step:
     tile dock 8, 5, "o"
     animate plate_on
     emit sparks, x + 8, y + 8
-    sound latch
+    sound latch, 0.85, -0.25, 40
   end
 ---
 script gate_relay
@@ -78,7 +78,7 @@ step:
     tile relay 8, 7, "o"
     animate plate_on
     emit sparks, x + 8, y + 8
-    sound latch
+    sound latch, 0.85, -0.25, 40
   end
 ---
 script walk
@@ -181,6 +181,7 @@ layer steel
   rows 3 4 a8.a/a2d2c2d2c/a8.a/a2c2d2c2d/a8.a
   px d 2 12
   px c 13 12
+  ramp bcd 2 3 12 8 0 -1 c
 frame gate base
 layer steel
   box b 1 0 14 16

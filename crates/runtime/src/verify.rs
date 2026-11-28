@@ -1,4 +1,4 @@
-use crate::{CompiledGame, Fault, Input, World};
+use crate::{CompiledGame, Fault, Input, SoundCue, World};
 use agge_core::{Progress, Project, Result, fail, script::PointerProperty, valid_id};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -464,6 +464,9 @@ impl<S: Borrow<Replay>> ReplayPlayback<S> {
     pub fn drain_audio(&mut self) -> Vec<String> {
         self.world.drain_audio()
     }
+    pub fn drain_cues(&mut self) -> Vec<SoundCue> {
+        self.world.drain_cues()
+    }
 
     pub fn step(&mut self) {
         if self.finished() {
@@ -557,6 +560,9 @@ fn read<'a>(world: &'a World, field: &str) -> Option<Reading<'a>> {
         ("room", None, None, None) => return Some(Reading::Text(world.room_id())),
         ("music", None, None, None) => return Some(Reading::Text(world.room().music.as_deref()?)),
         ("sound", Some(id), None, None) => world.queued_sound_count(id)? as f32,
+        ("sound", Some(id), Some("gain"), None) => world.last_sound(id)?.gain,
+        ("sound", Some(id), Some("pan"), None) => world.last_sound(id)?.pan,
+        ("sound", Some(id), Some("priority"), None) => world.last_sound(id)?.priority as f32,
         ("particles", None, None, None) => world.particles.len() as f32,
         ("progress_saved", None, None, None) => u8::from(world.progress_requested()) as f32,
         ("tiles_changed", None, None, None) => world.changed_tile_count() as f32,

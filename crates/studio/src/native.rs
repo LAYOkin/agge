@@ -10,6 +10,7 @@ use eframe::egui::{
     self, Color32, ColorImage, FontId, Key, Painter, Pos2, Rect, Stroke, StrokeKind, TextureHandle,
     TextureOptions, Ui, Vec2,
 };
+use rodio::{Source, source::UniformSourceIterator};
 use std::{
     collections::BTreeMap,
     io::Cursor,
@@ -361,11 +362,11 @@ impl Play {
     fn audio(&mut self) {
         let (world, sounds) = match &mut self.simulation {
             Simulation::Live(world) => {
-                let sounds = world.drain_audio();
+                let sounds = world.drain_cues();
                 (&**world, sounds)
             }
             Simulation::Replay(replay) => {
-                let sounds = replay.drain_audio();
+                let sounds = replay.drain_cues();
                 (replay.world(), sounds)
             }
         };
@@ -392,9 +393,15 @@ impl Play {
                 sink.set_volume(gain * audio.gain);
             }
         }
-        for id in sounds {
-            if let Some(Resource::Audio(audio)) = world.project().get(Kind::Audio, &id) {
-                self.audio.fire(&self.root, &audio.file, audio.gain);
+        for cue in sounds {
+            if let Some(Resource::Audio(audio)) = world.project().get(Kind::Audio, &cue.id) {
+                self.audio.fire_cue(
+                    &self.root,
+                    &audio.file,
+                    (audio.gain * cue.gain).min(4.),
+                    cue.pan,
+                    cue.priority,
+                );
             }
         }
     }
@@ -500,11 +507,58 @@ impl Play {
 pub struct AudioOutput {
     stream: Option<rodio::OutputStream>,
     clips: BTreeMap<String, Arc<[u8]>>,
-    playing: Vec<rodio::Sink>,
+    playing: Vec<Voice>,
     music: Option<rodio::Sink>,
     music_error: Option<String>,
     pub error: Option<String>,
 }
+
+struct Voice {
+    sink: rodio::Sink,
+    priority: u8,
+}
+
+struct StereoBalance<S> {
+    source: S,
+    levels: [f32; 2],
+    channel: usize,
+}
+
+impl<S: Source> StereoBalance<S> {
+    fn new(source: S, pan: f32) -> Self {
+        Self {
+            source,
+            levels: [1. - pan.max(0.), 1. + pan.min(0.)],
+            channel: 0,
+        }
+    }
+}
+
+impl<S: Source> Iterator for StereoBalance<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let sample = self.source.next()? * self.levels[self.channel];
+        self.channel ^= 1;
+        Some(sample)
+    }
+}
+
+impl<S: Source> Source for StereoBalance<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.source.current_span_len()
+    }
+    fn channels(&self) -> u16 {
+        self.source.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.source.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.source.total_duration()
+    }
+}
+
 impl AudioOutput {
     pub fn problem(&self) -> Option<&str> {
         self.music_error.as_deref().or(self.error.as_deref())
@@ -540,21 +594,51 @@ impl AudioOutput {
         Ok(sink)
     }
     pub fn fire(&mut self, root: &Path, file: &str, gain: f32) {
-        self.playing.retain(|sink| !sink.empty());
-        if self.playing.len() >= 64 {
+        self.fire_cue(root, file, gain, 0., 0);
+    }
+    fn fire_cue(&mut self, root: &Path, file: &str, gain: f32, pan: f32, priority: u8) {
+        if gain == 0. {
             return;
         }
-        if let Err(error) = self.play(root, file, gain) {
-            self.error = Some(error.to_string());
+        self.playing.retain(|voice| !voice.sink.empty());
+        let victim = if self.playing.len() == 64 {
+            let Some((index, _)) = self
+                .playing
+                .iter()
+                .enumerate()
+                .filter(|(_, voice)| voice.priority < priority)
+                .min_by_key(|(_, voice)| voice.priority)
+            else {
+                return;
+            };
+            Some(index)
+        } else {
+            None
+        };
+        match self.play(root, file, gain, pan) {
+            Ok(sink) => {
+                if let Some(index) = victim {
+                    self.playing.remove(index);
+                }
+                self.playing.push(Voice { sink, priority });
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
-    fn play(&mut self, root: &Path, file: &str, gain: f32) -> Result<()> {
+    fn play(&mut self, root: &Path, file: &str, gain: f32, pan: f32) -> Result<rodio::Sink> {
         let source = rodio::Decoder::new(Cursor::new(self.clip(root, file)?))?;
         let sink = self.sink(gain)?;
-        sink.append(source);
-        self.playing.push(sink);
-        self.error = None;
-        Ok(())
+        if pan == 0. {
+            sink.append(source);
+        } else {
+            let rate = source.sample_rate();
+            sink.append(StereoBalance::new(
+                UniformSourceIterator::new(source, 2, rate),
+                pan,
+            ));
+        }
+        Ok(sink)
     }
     fn sink(&mut self, gain: f32) -> Result<rodio::Sink> {
         if self.stream.is_none() {
@@ -704,6 +788,19 @@ fn actions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stereo_balance_attenuates_only_the_far_channel() {
+        let source = rodio::buffer::SamplesBuffer::new(2, 48_000, vec![1., 0.25, 0.5, 1.]);
+        assert_eq!(
+            StereoBalance::new(source.clone(), 0.5).collect::<Vec<_>>(),
+            [0.5, 0.25, 0.25, 1.]
+        );
+        assert_eq!(
+            StereoBalance::new(source, -1.).collect::<Vec<_>>(),
+            [1., 0., 0.5, 0.]
+        );
+    }
 
     #[test]
     fn quick_pointer_tap_maps_to_game_pixels_and_excludes_letterboxing() {

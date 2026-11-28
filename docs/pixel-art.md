@@ -50,6 +50,7 @@ For anticipation and impact timing, give the playback clip a sparse `holds` map.
 | `poly C X,Y X,Y ...` | Filled contour with up to 32 vertices |
 | `rows X Y 3a..b/.b2c` | Slash-separated rows. An optional count repeats the next glyph. `.` skips, and `-` erases. |
 | `dither A B X Y W H`, `recolor A B X Y W H` | Alternate glyphs or replace a particular glyph in a region |
+| `ramp ABC X Y W H DX DY [SOURCE]` | Apply a directional, ordered-dither ramp to filled pixels. Pass a glyph to restrict the operation to one material. |
 | `flood C X Y`, `clear X Y W H` | Flood a matching edge-connected region or clear a rectangle |
 | `copy X Y W H DX DY [TRANSFORM]` | Copy a region to a destination. Transparent source pixels skip. |
 | `mirror x X Y W H` or `mirror y X Y W H` | Reflect a region into adjacent pixels on the right or below |
@@ -57,6 +58,8 @@ For anticipation and impact timing, give the playback clip a sparse `holds` map.
 | `shift DX DY` | Move the current layer and clip against the canvas |
 | `shade X Y W H` | Move boundary pixels one stop on their swatch ramp using the style light direction |
 | `outline X Y W H [C]`, `outline8 X Y W H [C]` | Add a one-pixel edge on empty pixels using four or eight neighbors. Omit ink to use the profile. |
+
+For a top-lit panel, fill its shape with `b` and use `ramp abc 2 3 12 8 0 -1 b`. The color sequence runs from the dark to the lit end along the specified direction. Dither positions are anchored to the artwork canvas, and transparent pixels retain the original silhouette.
 
 Transforms are `mx`, `my`, `r90`, `r180`, and `r270`. Positive rotations are clockwise. Geometry and stamp destinations clip against the canvas. Copy sources must fit. `#` starts a comment. The project validator reports bad glyphs, unknown parts and poses, cyclic references, and commands that exceed the bounded rendering budget.
 

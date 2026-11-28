@@ -4,6 +4,8 @@ use super::{
 };
 use crate::{Result, fail};
 
+const BAYER: [[i32; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+
 pub struct Raster<'a> {
     pub pixels: &'a mut [Glyph],
     pub size: [usize; 2],
@@ -139,6 +141,47 @@ impl Raster<'_> {
                         "recolor" => previous,
                         _ => ink,
                     }
+                });
+            }
+            "ramp" => {
+                let colors = words.next()?.as_bytes();
+                if !(2..=8).contains(&colors.len()) || !colors.iter().all(|&key| glyph(key)) {
+                    return Err(fail("ramp needs 2–8 visible palette glyphs"));
+                }
+                for &key in colors {
+                    self.palette.require(key)?;
+                }
+                let region = Region::read(&mut words)?;
+                let direction = words.point()?;
+                if direction.iter().any(|axis| !(-8..=8).contains(axis)) {
+                    return Err(fail("ramp direction components must be from −8 to 8"));
+                }
+                let source = words
+                    .optional()
+                    .map(|word| self.ink(&mut Words::new(word)))
+                    .transpose()?;
+                if source == Some(0) {
+                    return Err(fail("ramp source glyph must be visible"));
+                }
+                let [w, h] = region.size.map(|n| n as i32 - 1);
+                let [dx, dy] = direction;
+                let reach = dx.abs() * w + dy.abs() * h;
+                if reach == 0 {
+                    return Err(fail("ramp direction must cross at least two cells"));
+                }
+                renderer.spend(region.cost())?;
+                self.region(region, |[x, y], pixel| {
+                    if pixel == 0 || source.is_some_and(|key| key != pixel) {
+                        return pixel;
+                    }
+                    let local_x = x - region.at[0];
+                    let local_y = y - region.at[1];
+                    let u = if dx < 0 { w - local_x } else { local_x };
+                    let v = if dy < 0 { h - local_y } else { local_y };
+                    let level = (u * dx.abs() + v * dy.abs()) * (colors.len() as i32 - 1);
+                    let threshold = 2 * BAYER[(y & 3) as usize][(x & 3) as usize] + 1;
+                    let round_up = (level % reach) * 32 > threshold * reach;
+                    colors[(level / reach) as usize + usize::from(round_up)]
                 });
             }
             "poly" => {

@@ -144,7 +144,7 @@ pub enum Statement {
     Camera(Expr, Expr),
     Spawn(String, Expr, Expr),
     Emit(String, Option<Box<(Expr, Expr)>>),
-    Sound(String),
+    Sound(String, Vec<Expr>),
     SaveProgress,
     Animate(String, Option<Expr>),
     After(String, Expr),
@@ -839,7 +839,15 @@ fn parse_line(mut p: Parser<'_>) -> Result<Option<Line>> {
                 };
                 Emit(id, position)
             }
-            "sound" => Sound(p.reference(Kind::Audio, false)?),
+            "sound" => {
+                let id = p.reference(Kind::Audio, false)?;
+                let mut controls = Vec::new();
+                while p.peek() == Some(&Token::Punct(',')) && controls.len() < 3 {
+                    p.punct(',')?;
+                    controls.push(p.expr(0)?);
+                }
+                Sound(id, controls)
+            }
             "save" => {
                 p.program.save_lines.push(p.line);
                 SaveProgress

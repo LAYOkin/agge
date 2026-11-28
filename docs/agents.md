@@ -20,9 +20,9 @@ A typical MCP client configuration uses this command and argument pair. Use the 
 | MCP tool | Equivalent CLI | Inputs |
 | --- | --- | --- |
 | `agge_query` | `agge query PROJECT JSON` | `prefix`, `get`, `asset`, `outline`, `refs`, `session`, `read`, or `schema` |
-| `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops,preview?,verify?}` |
+| `agge_edit` | `agge edit PROJECT JSON` | `{base?,ops,preview?,verify?,verify_assets?}` |
 | `agge_check` | `agge check PROJECT` | Empty object |
-| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,pointer?,expect?,sample?,watch?,select?,tiles?,crop?,base?,from?}` |
+| `agge_run` | `agge test`, `inspect`, or `capture` | `{ticks,room?,seed?,input?,pointer?,progress?,progress_out?,expect?,sample?,watch?,select?,tiles?,crop?,base?,from?}` |
 | `agge_history` | `agge undo` or `agge redo` | `{redo,base?}` |
 | `agge_knowledge` | `agge knowledge PROJECT JSON` | `{op,key?,value?}` |
 | `agge_art` | `agge art PROJECT JSON OUTPUT.png` | `{pixel,frames?,layer?,area?,scale?,columns?,compare?,base?,ops?}` |
@@ -100,6 +100,8 @@ Assert or watch a cell by glyph with `tile/terrain/4/2`, where the last two segm
 Use `timer/placement/name` for remaining ticks and `expired/placement/name` to check when a timer is due. `expired` returns `1` only on the due tick and `0` otherwise. Replays read after the tick finishes, so a timer that a script canceled or rescheduled during that tick returns `0`.
 
 Use `sound/audio_id` to count how many times a sound effect was queued on a tick. For example, `{"at":12,"field":"sound/ping","is":1}` checks for one cue. A known clip that was silent returns `0`. An unknown clip ID returns no value. Tick 0 includes sounds from startup create events, and the check works without playing audio.
+
+Use `sound/ping/gain`, `sound/ping/pan`, or `sound/ping/priority` for the latest cue's scripted controls. Missing cues return null.
 
 ```json
 {

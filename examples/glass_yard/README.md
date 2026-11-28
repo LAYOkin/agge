@@ -7,6 +7,6 @@ agge-player --progress glass-yard-test.json examples/glass_yard/game.agge
 agge test examples/glass_yard/game.agge '@examples/glass_yard/replay.json'
 ```
 
-The project uses native pixel assets for all sprites and terrain. A plate updates its tile and collider in the same tick, changes its animation, and plays a cue. Finishing a shift saves deliveries and relay access. The replay suite checks the dock shift, an initially locked relay, and a relay victory from a version 1 progress file.
+The project uses native pixel assets for all sprites and terrain, with a directional material ramp on the steel walls. A plate updates its tile and collider in the same tick, changes its animation, and plays a panned cue. The higher-priority finish cue accompanies a progress save. The replay suite checks the dock shift, an initially locked relay, and a relay victory from a version 1 progress file.
 
 ![The Glass Yard dock with the pressure plate activated and the gate open](preview.png)

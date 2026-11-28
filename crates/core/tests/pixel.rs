@@ -43,6 +43,29 @@ fn edit(value: serde_json::Value) -> Edit {
 }
 
 #[test]
+fn directional_ramp_dithers_only_the_selected_material() {
+    let project = Project::parse(
+        r#"agge/1 {}
+room main {}
+palette finish {"swatches":{"a":"182539","b":"38617a","c":"a9d1c2","k":"161b21"}}
+pixel panel
+canvas 5 4
+style finish
+layer metal
+  rows 0 0 5b/5b/5b/bk.bb
+  ramp abc 0 0 5 4 1 0 b
+---
+"#,
+    )
+    .unwrap();
+    let art = Renderer::new(&project).render("panel").unwrap();
+    let pixels = art.pixels(None, None, None).unwrap();
+    assert_eq!(&pixels[15..], &[b'a', b'k', 0, b'c', b'c']);
+    assert_eq!([pixels[0], pixels[2], pixels[4]], *b"abc");
+    assert_eq!([pixels[1], pixels[6]], *b"ab");
+}
+
+#[test]
 fn layers_reuse_rotated_parts_and_inherit_palette_glyphs() {
     let project = Project::parse(ASSEMBLY).unwrap();
     let index = Index::build(&project);

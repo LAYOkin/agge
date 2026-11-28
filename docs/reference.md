@@ -92,7 +92,7 @@ step:
 | `camera x, y` | Set the viewport's top-left world coordinate for the end of this tick |
 | `spawn object x, y` | Queue creation of an instance at a pixel position |
 | `emit particle` or `emit particle, x, y` | Emit a burst at the instance origin or the specified world position |
-| `sound audio` | Queue a clip for native playback |
+| `sound audio[, gain[, pan[, priority]]]` | Queue a clip with an optional gain multiplier, stereo balance, and priority |
 | `save` | Request a portable progress save at the end of a successful tick |
 | `animate clip` or `animate clip, restart` | Switch the instance's clip, restarting when `restart` is nonzero |
 | `flip x, y` | Mirror the instance sprite on each axis whose expression is nonzero |
@@ -103,6 +103,8 @@ step:
 | `destroy` | End the event and remove the current instance |
 | `if expr` / `else` / `end` | Run a block when the expression evaluates to a nonzero number |
 | `repeat count` / `end` | Repeat a block 0 to 4096 times within the tick instruction budget |
+
+Sound cue controls default to gain 1, pan 0, and priority 0. Gain ranges from 0 to 4 and multiplies the clip gain. The resulting gain is capped at 4. Pan ranges from −1 at left to 1 at right. Priorities are integers from 0 to 255. When the queue or native voice pool is full, a new cue can displace the oldest cue among those with the lowest, strictly lower priority.
 
 Expressions use finite single-precision numbers, `true` and `false`, parentheses, and instance variables. Operators in precedence order from weakest to strongest are `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, then unary `- !`. Boolean operators short-circuit. Undefined instance variables fault at runtime and unset globals read as zero.
 

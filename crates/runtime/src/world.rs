@@ -19,6 +19,31 @@ pub type Input = BTreeSet<String>;
 type Queued = (String, Option<String>, f32, f32);
 const ENTITY_LIMIT: usize = 4096;
 const PARTICLE_LIMIT: usize = 8192;
+const SOUND_LIMIT: usize = 256;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SoundCue {
+    pub id: String,
+    pub gain: f32,
+    pub pan: f32,
+    pub priority: u8,
+}
+
+impl SoundCue {
+    fn plain(id: String) -> Self {
+        Self {
+            id,
+            gain: 1.,
+            pan: 0.,
+            priority: 0,
+        }
+    }
+
+    fn is_plain(&self) -> bool {
+        self.gain == 1. && self.pan == 0. && self.priority == 0
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Bounds {
@@ -352,6 +377,7 @@ pub struct World {
     collision_tiles: Arc<BTreeMap<String, Arc<tiles::CollisionTiles>>>,
     pub(crate) has_depth: bool,
     step_ids: Vec<u64>,
+    active: BTreeSet<u64>,
     room_tiles: Vec<(String, Arc<tiles::CollisionTiles>)>,
     tile_changes: tiles::TileChanges,
     tile_change_count: usize,
@@ -362,7 +388,7 @@ pub struct World {
     overlaps: BTreeMap<String, spatial::SpatialIndex>,
     pub(crate) globals: BTreeMap<String, f32>,
     pub(crate) particles: Vec<Spark>,
-    audio: Vec<String>,
+    audio: Vec<SoundCue>,
     input: Input,
     previous: Input,
     pointer: Option<[u32; 2]>,
@@ -410,6 +436,7 @@ impl World {
             animations: Arc::clone(&game.animations),
             has_depth: game.has_depth,
             step_ids: Vec::new(),
+            active: BTreeSet::new(),
             collision_tiles: Arc::clone(&game.collision_tiles),
             room_tiles: Vec::new(),
             tile_changes: BTreeMap::new(),
@@ -523,11 +550,40 @@ impl World {
         }
     }
     pub fn drain_audio(&mut self) -> Vec<String> {
+        self.drain_cues().into_iter().map(|cue| cue.id).collect()
+    }
+    pub fn drain_cues(&mut self) -> Vec<SoundCue> {
         std::mem::take(&mut self.audio)
     }
     pub(crate) fn queued_sound_count(&self, id: &str) -> Option<usize> {
         self.project.get(Kind::Audio, id)?;
-        Some(self.audio.iter().filter(|queued| *queued == id).count())
+        Some(self.audio.iter().filter(|cue| cue.id == id).count())
+    }
+    pub(crate) fn last_sound(&self, id: &str) -> Option<&SoundCue> {
+        self.audio.iter().rev().find(|cue| cue.id == id)
+    }
+    fn queue_sound(&mut self, id: &str, gain: f32, pan: f32, priority: u8) {
+        if self.audio.len() == SOUND_LIMIT {
+            if priority == 0 {
+                return;
+            }
+            let Some((index, _)) = self
+                .audio
+                .iter()
+                .enumerate()
+                .filter(|(_, old)| old.priority < priority)
+                .min_by_key(|(_, old)| old.priority)
+            else {
+                return;
+            };
+            self.audio.remove(index);
+        }
+        self.audio.push(SoundCue {
+            id: id.into(),
+            gain,
+            pan,
+            priority,
+        });
     }
     pub(crate) fn object(&self, name: &str) -> &Object {
         &self.objects[name]
@@ -587,12 +643,7 @@ impl World {
         });
         let mut ids = std::mem::take(&mut self.step_ids);
         ids.clear();
-        ids.extend(
-            self.entities
-                .values()
-                .filter(|entity| entity.needs_step())
-                .map(|entity| entity.id),
-        );
+        ids.extend(self.active.iter().copied());
         let index = self.index.clone();
         for &id in &ids {
             let mut entity = self
@@ -631,6 +682,9 @@ impl World {
             if entity.dead {
                 self.unregister(&entity);
             } else {
+                if !entity.needs_step() {
+                    self.active.remove(&entity.id);
+                }
                 self.keep_entity(entity);
             }
         }
@@ -648,6 +702,7 @@ impl World {
     fn enter_room(&mut self) -> std::result::Result<(), Fault> {
         self.prepare_room_geometry();
         self.entities.clear();
+        self.active.clear();
         self.members.clear();
         self.placements.clear();
         self.solids.clear();
@@ -685,6 +740,9 @@ impl World {
     }
 
     fn register_entity(&mut self, entity: Entity) {
+        if entity.needs_step() {
+            self.active.insert(entity.id);
+        }
         if let Some(placement) = &entity.placement {
             self.placements.insert(placement.clone(), entity.id);
         }
@@ -745,6 +803,9 @@ impl World {
                 if entity.dead {
                     self.unregister(&entity);
                 } else {
+                    if entity.needs_step() {
+                        self.active.insert(entity.id);
+                    }
                     self.keep_entity(entity);
                 }
             }
@@ -764,6 +825,7 @@ impl World {
     }
 
     fn unregister(&mut self, entity: &Entity) {
+        self.active.remove(&entity.id);
         self.solids.remove(entity.id);
         if let Some(index) = self.overlaps.get_mut(&entity.object) {
             index.remove(entity.id);

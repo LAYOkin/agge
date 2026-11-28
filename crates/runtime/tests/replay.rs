@@ -53,6 +53,57 @@ step:
 }
 
 #[test]
+fn priority_audio_keeps_important_cues_and_restores_their_controls() {
+    let game = CompiledGame::new(
+        Project::parse(
+            r#"agge/1 {}
+room main {"instances":[["mixer","mixer",0,0]]}
+object mixer {"script":"drive"}
+audio crowd {"file":"crowd.wav"}
+audio score {"file":"score.wav"}
+script drive
+create:
+  repeat 256
+    sound crowd
+  end
+  sound score, 0.5, -0.75, 200
+  sound crowd
+---
+"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let spec: Replay = serde_json::from_str(
+        r#"{"ticks":0,"expect":[
+            {"at":0,"field":"sound/crowd","is":255},
+            {"at":0,"field":"sound/score","is":1},
+            {"at":0,"field":"sound/score/gain","is":0.5},
+            {"at":0,"field":"sound/score/pan","is":-0.75},
+            {"at":0,"field":"sound/score/priority","is":200}
+        ]}"#,
+    )
+    .unwrap();
+    let (world, report) = replay_compiled(&game, &spec).unwrap();
+    assert!(report.passed(), "{report:?}");
+    let bytes = world.checkpoint().unwrap().encode().unwrap();
+    let mut restored = game
+        .restore(agge_runtime::Checkpoint::decode(&bytes).unwrap())
+        .unwrap();
+    let sounds = restored.drain_cues();
+    assert_eq!(sounds.len(), 256);
+    assert_eq!(
+        sounds.last().unwrap(),
+        &agge_runtime::SoundCue {
+            id: "score".into(),
+            gain: 0.5,
+            pan: -0.75,
+            priority: 200,
+        }
+    );
+}
+
+#[test]
 fn watch_records_initial_and_changed_values_and_flags_the_first_omission() {
     let project = Project::parse(
         r#"agge/1 {}

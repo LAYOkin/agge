@@ -1,6 +1,6 @@
 use super::{
-    ActorEffects, CompiledGame, ENTITY_LIMIT, Entity, Input, PARTICLE_LIMIT, Spark, World, bounded,
-    tiles::SavedTiles,
+    ActorEffects, CompiledGame, ENTITY_LIMIT, Entity, Input, PARTICLE_LIMIT, SOUND_LIMIT, SoundCue,
+    Spark, World, bounded, tiles::SavedTiles,
 };
 use agge_core::{
     Kind, Project, Resource, Result, clamp_view_origin, fail, store::write_atomic, valid_id,
@@ -39,7 +39,14 @@ pub struct Checkpoint {
     entities: Vec<SavedActor>,
     particles: Vec<Spark>,
     held: Input,
-    sounds: Vec<String>,
+    sounds: Vec<SavedSound>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum SavedSound {
+    Plain(String),
+    Cue(SoundCue),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -170,7 +177,17 @@ impl World {
             particles: self.particles.clone(),
             pointer: self.pointer,
             held: self.previous.clone(),
-            sounds: self.audio.clone(),
+            sounds: self
+                .audio
+                .iter()
+                .map(|cue| {
+                    if cue.is_plain() {
+                        SavedSound::Plain(cue.id.clone())
+                    } else {
+                        SavedSound::Cue(cue.clone())
+                    }
+                })
+                .collect(),
         })
     }
 }
@@ -213,7 +230,7 @@ impl CompiledGame {
             || save.rng.contains(&0)
             || save.entities.len() > ENTITY_LIMIT
             || save.particles.len() > PARTICLE_LIMIT
-            || save.sounds.len() > 256
+            || save.sounds.len() > SOUND_LIMIT
             || save.held.len() > 4096
             || !save.held.iter().all(|key| valid_id(key))
             || !valid_vars(&save.globals)
@@ -323,15 +340,20 @@ impl CompiledGame {
                 return Err(fail("checkpoint has an invalid particle"));
             }
         }
-        if save
-            .sounds
-            .iter()
-            .any(|id| self.project.get(Kind::Audio, id).is_none())
-        {
-            return Err(fail("checkpoint contains a missing sound"));
-        }
         world.particles = save.particles;
-        world.audio = save.sounds;
+        for sound in save.sounds {
+            let cue = match sound {
+                SavedSound::Plain(id) => SoundCue::plain(id),
+                SavedSound::Cue(cue) => cue,
+            };
+            if self.project.get(Kind::Audio, &cue.id).is_none()
+                || !(0. ..=4.).contains(&cue.gain)
+                || !(-1. ..=1.).contains(&cue.pan)
+            {
+                return Err(fail("checkpoint contains an invalid sound cue"));
+            }
+            world.audio.push(cue);
+        }
         Ok(world)
     }
 }

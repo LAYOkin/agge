@@ -222,10 +222,22 @@ impl World {
                 }
                 self.queued.push_back((object.clone(), None, x, y));
             }
-            Statement::Sound(id) => {
-                if self.audio.len() < 256 {
-                    self.audio.push(id.clone());
+            Statement::Sound(id, controls) => {
+                let mut values = [1., 0., 0.];
+                for (value, control) in values.iter_mut().zip(controls) {
+                    *value = self.eval(entity, context, control, 0)?;
                 }
+                let [gain, pan, priority] = values;
+                if !(0. ..=4.).contains(&gain)
+                    || !(-1. ..=1.).contains(&pan)
+                    || !(0. ..=255.).contains(&priority)
+                    || priority.fract() != 0.
+                {
+                    return Err(
+                        "sound requires gain 0–4, pan −1 to 1, and integer priority 0–255".into(),
+                    );
+                }
+                self.queue_sound(id, gain, pan, priority as u8);
             }
             Statement::SaveProgress => self.progress_requested = true,
             Statement::Animate(id, restart) => {
